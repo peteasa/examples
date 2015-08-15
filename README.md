@@ -10,6 +10,6 @@ The following sources have been used to build this set of examples:
 
 For now I keep a modified copy of these sources here because I have fixed bugs and modified the make process for use with Yocto.  
 
-https://github.com/bmartini/zynq-xdma.git
 http://parallellagram.org/cat/Parallella%20FPGA%20Tutorials
-
+https://github.com/adapteva/epiphany-examples
+https://github.com/bmartini/zynq-xdma.git
