@@ -1,6 +1,6 @@
-# parallella examples `old-elink`
+# parallella examples `elink-redesign`
 
-Examples for COMBINED FPGA and LINUX environment START IN https://github.com/peteasa/parallella branch `old-elink`
+Examples for COMBINED FPGA and LINUX environment START IN https://github.com/peteasa/parallella branch `elink-redesign`
 
 ### Brief note about this repository
 
