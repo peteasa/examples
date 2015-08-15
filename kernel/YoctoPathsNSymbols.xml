@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cdtprojectproperties>
+<section name="org.eclipse.cdt.internal.ui.wizards.settingswizards.IncludePaths">
+<language name="C Source File">
+<includepath>${OECORE_TARGET_SYSROOT}/usr/src/kernel/arch/arm/include</includepath>
+<includepath>${OECORE_TARGET_SYSROOT}/usr/src/kernel/include</includepath>
+<includepath>${OECORE_TARGET_SYSROOT}/usr/src/kernel/include/uapi</includepath>
+<includepath>${OECORE_TARGET_SYSROOT}/usr/include</includepath>
+<includepath>${OECORE_TARGET_SYSROOT}/usr/include/c++</includepath>
+<includepath>${OECORE_TARGET_SYSROOT}/usr/include/c++/arm-poky-linux-gnueabi</includepath>
+
+</language>
+<language name="C++ Source File">
+<includepath>${OECORE_TARGET_SYSROOT}/usr/src/kernel/arch/arm/include</includepath>
+<includepath>${OECORE_TARGET_SYSROOT}/usr/src/kernel/include</includepath>
+<includepath>${OECORE_TARGET_SYSROOT}/usr/src/kernel/include/uapi</includepath>
+<includepath>${OECORE_TARGET_SYSROOT}/usr/include</includepath>
+<includepath>${OECORE_TARGET_SYSROOT}/usr/include/c++</includepath>
+<includepath>${OECORE_TARGET_SYSROOT}/usr/include/c++/arm-poky-linux-gnueabi</includepath>
+
+</language>
+<language name="Object File">
+
+</language>
+<language name="Assembly Source File">
+<includepath>${OECORE_TARGET_SYSROOT}/usr/src/kernel/arch/arm/include</includepath>
+<includepath>${OECORE_TARGET_SYSROOT}/usr/src/kernel/include</includepath>
+<includepath>${OECORE_TARGET_SYSROOT}/usr/src/kernel/include/uapi</includepath>
+<includepath>${OECORE_TARGET_SYSROOT}/usr/include</includepath>
+<includepath>${OECORE_TARGET_SYSROOT}/usr/include/c++</includepath>
+<includepath>${OECORE_TARGET_SYSROOT}/usr/include/c++/arm-poky-linux-gnueabi</includepath>
+
+</language>
+</section>
+<section name="org.eclipse.cdt.internal.ui.wizards.settingswizards.Macros">
+<language name="C Source File">
+<macro>
+<name>__KERNEL__</name><value>1</value>
+</macro>
+<macro>
+<name>__LINUX_ARM_ARCH__</name><value>7</value>
+</macro>
+<macro>
+<name>MODULE</name><value>1</value>
+</macro>
+
+</language>
+<language name="C++ Source File">
+<macro>
+<name>__KERNEL__</name><value>1</value>
+</macro>
+<macro>
+<name>__LINUX_ARM_ARCH__</name><value>7</value>
+</macro>
+<macro>
+<name>MODULE</name><value>1</value>
+</macro>
+
+</language>
+<language name="Object File">
+
+</language>
+<language name="Assembly Source File">
+
+</language>
+</section>
+</cdtprojectproperties>
