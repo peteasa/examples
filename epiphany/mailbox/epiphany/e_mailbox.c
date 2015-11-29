@@ -32,8 +32,14 @@
 #include "e_lib.h"
 
 #define ELINK_BASE	0x81000000
-#define E_MAILBOXLO	0xF0310
-#define ELINK_RXCFG	0xF0300
+#define E_MAILBOXLO	0xF0320
+
+// #define USE_DMA 1
+#ifdef USE_DMA
+#define e_memcopy(dst, src, size) e_dma_copy(dst, src, size)
+#else
+#define e_memcopy(dst, src, size) memcpy(dst, src, size)
+#endif
 
 char outbuf[128] SECTION("shared_dram");
 
@@ -47,17 +53,16 @@ int main(void) {
 	// in the internal memory, so we link against
 	// the FAST.LDF linker script, where these
 	// functions are placed in external memory.
-	// sprintf(outbuf, "Hello World from core 0x%03x!", coreid);
-
-	unsigned int * reg;
-	reg = (unsigned int *)(ELINK_BASE | ELINK_RXCFG);
-	sprintf(outbuf, "Hello World RxCFG: 0x%x!", *reg);
+	sprintf(outbuf, "Hello World from core 0x%03x!", coreid);
 	
 	// Write coreid to the mailbox
 	// Fix this once there is a proper way to write to the mailbox
 	e_coreid_t * dst;
-	dst = (e_coreid_t *)(ELINK_BASE | E_MAILBOXLO);
-	*dst = coreid;
+	dst = (e_coreid_t *)(ELINK_BASE + E_MAILBOXLO);
+	// e_memcopy(dst, &coreid, sizeof(e_coreid_t));
+	
+	long long message = 0xfedcba9876543210;
+	e_memcopy(dst, &message, sizeof(message));
 
 	return EXIT_SUCCESS;
 }

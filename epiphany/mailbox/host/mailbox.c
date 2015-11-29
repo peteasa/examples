@@ -49,11 +49,11 @@ int e_debug_write(unsigned addr, unsigned data);
 int e_debug_map(unsigned addr, void **ptr, unsigned *offset);
 void e_debug_init(int version);
 
-#define ELINK_BASE	0x81000000
-#define ELINK_MAILBOXLO	(ELINK_BASE + 0xF0310)
-#define ELINK_MAILBOXHI	(ELINK_BASE + 0xF0314)
-#define ELINK_TXCFG	(ELINK_BASE + 0xF0210)
-#define ELINK_RXCFG	(ELINK_BASE + 0xF0300)
+#define ELINK_MAILBOXLO	(0xF0320)
+#define ELINK_MAILBOXHI	(0xF0324)
+#define ELINK_MAILBOXSTAT (0xF0328)
+#define ELINK_TXCFG	(0xF0210)
+#define ELINK_RXCFG	(0xF0300)
 
 int main(int argc, char *argv[])
 {
@@ -125,6 +125,14 @@ int main(int argc, char *argv[])
 
 		// Print the message and close the workgroup.
 		printf("\"%s\"\n", emsg);
+
+		// Read the mailbox
+		int pre_stat    = ee_read_esys(ELINK_MAILBOXSTAT);
+		int mbox_lo     = ee_read_esys(ELINK_MAILBOXLO);
+		int mbox_hi     = ee_read_esys(ELINK_MAILBOXHI);
+		int post_stat   = ee_read_esys(ELINK_MAILBOXSTAT);
+		printf ("PRE_STAT=%08x POST_STAT=%08x LO=%08x HI=%08x\n", pre_stat, post_stat, mbox_lo, mbox_hi);
+		
 		e_close(&dev);
 	
 		col++;
@@ -134,19 +142,7 @@ int main(int argc, char *argv[])
 	// e-platform connection.
 	e_free(&emem);
 	e_finalize();
-
-	// TODO move this into the for next loop above
-	// once there is a way to fetch the mailbox content with the
-	// normal e-hal
-	unsigned int mailboxEntry;
-	e_debug_read(ELINK_MAILBOXHI, &mailboxEntry);
-	printf("HI: 0x%x: 0x%x;  ", ELINK_MAILBOXHI, mailboxEntry);
-	e_debug_read(ELINK_MAILBOXLO, &mailboxEntry);
-	printf("LO: 0x%x: 0x%x\n", ELINK_MAILBOXLO, mailboxEntry);
-	e_debug_read(ELINK_TXCFG, &mailboxEntry);
-	printf("TxCFG: 0x%x: 0x%x\n", ELINK_TXCFG, mailboxEntry);
-	e_debug_read(ELINK_RXCFG, &mailboxEntry);
-	printf("RxCFG: 0x%x: 0x%x\n", ELINK_RXCFG, mailboxEntry);	
+	
 	return 0;
 }
 
