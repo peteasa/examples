@@ -34,7 +34,7 @@
 #define ELINK_BASE	0x81000000
 #define E_MAILBOXLO	0xF0320
 
-// #define USE_DMA 1
+#define USE_DMA 1
 #ifdef USE_DMA
 #define e_memcopy(dst, src, size) e_dma_copy(dst, src, size)
 #else
@@ -56,13 +56,9 @@ int main(void) {
 	sprintf(outbuf, "Hello World from core 0x%03x!", coreid);
 	
 	// Write coreid to the mailbox
-	// Fix this once there is a proper way to write to the mailbox
 	e_coreid_t * dst;
 	dst = (e_coreid_t *)(ELINK_BASE + E_MAILBOXLO);
-	// e_memcopy(dst, &coreid, sizeof(e_coreid_t));
-	
-	long long message = 0xfedcba9876543210;
-	e_memcopy(dst, &message, sizeof(message));
+	e_memcopy(dst, &coreid, sizeof(e_coreid_t));
 
 	return EXIT_SUCCESS;
 }

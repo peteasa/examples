@@ -127,12 +127,21 @@ int main(int argc, char *argv[])
 		printf("\"%s\"\n", emsg);
 
 		// Read the mailbox
-		int pre_stat    = ee_read_esys(ELINK_MAILBOXSTAT);
-		int mbox_lo     = ee_read_esys(ELINK_MAILBOXLO);
-		int mbox_hi     = ee_read_esys(ELINK_MAILBOXHI);
-		int post_stat   = ee_read_esys(ELINK_MAILBOXSTAT);
-		printf ("PRE_STAT=%08x POST_STAT=%08x LO=%08x HI=%08x\n", pre_stat, post_stat, mbox_lo, mbox_hi);
-		
+		int mbentries;
+		for (mbentries = 0; mbentries < 8; mbentries++)
+		{
+			int pre_stat    = ee_read_esys(ELINK_MAILBOXSTAT);
+			if (0 == pre_stat)
+			{
+				break;
+			}
+
+			int mbox_lo     = ee_read_esys(ELINK_MAILBOXLO);
+			int mbox_hi     = ee_read_esys(ELINK_MAILBOXHI);
+			int post_stat   = ee_read_esys(ELINK_MAILBOXSTAT);
+			printf ("PRE_STAT=%08x POST_STAT=%08x LO=%08x HI=%08x\n", pre_stat, post_stat, mbox_lo, mbox_hi);
+		}
+
 		e_close(&dev);
 	
 		col++;
