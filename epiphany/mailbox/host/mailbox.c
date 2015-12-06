@@ -1,5 +1,7 @@
 /*
-  mailbox.c
+  mailbox.c (based on hello_world)
+
+  Updated by Peter Saunderson
 
   Copyright (C) 2012 Adapteva, Inc.
   Contributed by Yaniv Sapir <yaniv@adapteva.com>
@@ -32,28 +34,39 @@
 #include <unistd.h>	// for _SC_PAGESIZE
 #include <sys/mman.h>	// for mmap
 #include <fcntl.h>	// for O_RDWR
+#include <errno.h>	// for errno
 #include <e-hal.h>
+#include <linux/ioctl.h>
 
 #define _BufSize   (128)
 #define _BufOffset (0x01000000)
 #define _SeqLen    (32)
-
-//TODO: Remove globals?
-unsigned page_size = 0;
-int      mem_fd = -1;
-
-//Declarations
-void e_debug_unmap(void *ptr);
-int e_debug_read(unsigned addr, unsigned *data);
-int e_debug_write(unsigned addr, unsigned data);
-int e_debug_map(unsigned addr, void **ptr, unsigned *offset);
-void e_debug_init(int version);
 
 #define ELINK_MAILBOXLO	(0xF0320)
 #define ELINK_MAILBOXHI	(0xF0324)
 #define ELINK_MAILBOXSTAT (0xF0328)
 #define ELINK_TXCFG	(0xF0210)
 #define ELINK_RXCFG	(0xF0300)
+
+//
+// Following should be in epiphany.h, keep them here for now
+//
+#define EPIPHANY_DEV "/dev/epiphany"
+
+#define EPIPHANY_IOC_MAGIC  'k'
+
+#define EPIPHANY_IOC_GETSHM_CMD   24
+#define EPIPHANY_IOC_MB_DISABLE_CMD   25
+#define EPIPHANY_IOC_MB_ENABLE_CMD    26
+
+#define EPIPHANY_IOC_MAXNR        26
+ 
+#define EPIPHANY_IOC_GETSHM _IOWR(EPIPHANY_IOC_MAGIC, EPIPHANY_IOC_GETSHM_CMD, epiphany_alloc_t *)
+#define EPIPHANY_IOC_MB_ENABLE _IO(EPIPHANY_IOC_MAGIC, EPIPHANY_IOC_MB_ENABLE_CMD)
+#define EPIPHANY_IOC_MB_DISABLE _IO(EPIPHANY_IOC_MAGIC, EPIPHANY_IOC_MB_DISABLE_CMD)
+//
+// Above should be in epiphany.h, keep them here for now
+//
 
 int main(int argc, char *argv[])
 {
@@ -77,10 +90,24 @@ int main(int argc, char *argv[])
 	// for message passing from eCore to host.
 	e_alloc(&emem, _BufOffset, _BufSize);
 
+	// Now open the epiphany device for mailbox interrupt control
+	int devfd = open(EPIPHANY_DEV, O_RDWR | O_SYNC);
+	if ( -1 == devfd ) {
+		printf("main(): EPIPHANY_DEV file open failure.");
+		return E_ERR;
+	}
+
 	row = 0;
 	col = 0;
 	for (i=0; i<_SeqLen; i++)
-	{
+	{		
+	        // Enable the mailbox interrupt
+		if ( -1 == ioctl(devfd, EPIPHANY_IOC_MB_ENABLE) )
+		{
+			printf("main(): Failed to enable mailbox "
+			  "Error is %s\n", strerror(errno));
+		}
+
 		// Visit each core
 		unsigned lastCol = col;
 		col = col % platform.cols;
@@ -97,9 +124,7 @@ int main(int argc, char *argv[])
 			}
 		}
 		
-		// Draw a random core
-		//row = rand() % platform.rows;
-		//col = rand() % platform.cols;
+		// Calculate the coreid
 		coreid = (row + platform.row) * 64 + col + platform.col;
 		printf("main: %3d: Message from eCore 0x%03x (%2d,%2d): ", i, coreid, row, col);
 
@@ -120,12 +145,24 @@ int main(int argc, char *argv[])
 
 		// Wait for core program execution to finish, then
 		// read message from shared buffer.
-		usleep(10000);
+		// TODO replace wait with wait on interrupt.. perhaps
+		//      implement blocking read of sysfs file filled by
+		//      interrupt handler
+		usleep(40000);
 		e_read(&emem, 0, 0, 0x0, emsg, _BufSize);
 
 		// Print the message and close the workgroup.
 		printf("\"%s\"\n", emsg);
 
+		/* Temp removal of the following
+                   Seems to cause problems with visiting each core.
+		int items = ee_read_esys(ELINK_MAILBOXSTAT);
+		if (0 == items)
+		{
+			printf ("main(): ERROR: mailbox txfer stopped!");
+			break;
+		}
+		
 		// Read the mailbox
 		int mbentries;
 		for (mbentries = 0; mbentries < 8; mbentries++)
@@ -139,113 +176,37 @@ int main(int argc, char *argv[])
 			int mbox_lo     = ee_read_esys(ELINK_MAILBOXLO);
 			int mbox_hi     = ee_read_esys(ELINK_MAILBOXHI);
 			int post_stat   = ee_read_esys(ELINK_MAILBOXSTAT);
-			printf ("PRE_STAT=%08x POST_STAT=%08x LO=%08x HI=%08x\n", pre_stat, post_stat, mbox_lo, mbox_hi);
+			printf ("main(): PRE_STAT=%08x POST_STAT=%08x LO=%08x HI=%08x\n", pre_stat, post_stat, mbox_lo, mbox_hi);
 		}
-
+		*/
+		
 		e_close(&dev);
 	
 		col++;
 	}
-
+	
+	// Read the mailbox
+	int mbentries;
+	for (mbentries = 0; mbentries < 20; mbentries++)
+	{
+		int pre_stat    = ee_read_esys(ELINK_MAILBOXSTAT);
+		if (0 == pre_stat)
+		{
+			break;
+		}
+		int mbox_lo     = ee_read_esys(ELINK_MAILBOXLO);
+		int mbox_hi     = ee_read_esys(ELINK_MAILBOXHI);
+		int post_stat   = ee_read_esys(ELINK_MAILBOXSTAT);
+		printf ("main(): PRE_STAT=%08x POST_STAT=%08x LO=%08x HI=%08x\n", pre_stat, post_stat, mbox_lo, mbox_hi);
+	}
+		
+	// Now close the epiphany device
+	close(devfd);
+	
 	// Release the allocated buffer and finalize the
 	// e-platform connection.
 	e_free(&emem);
 	e_finalize();
 	
 	return 0;
-}
-
-//############################################
-//# Read from device
-//############################################
-int e_debug_read(unsigned addr, unsigned *data) {
-
-  int  ret;
-  unsigned offset;
-  char *ptr;
-
-  //Debug
-  //printf("read addr=%08x data=%08x\n", addr, *data);
-  //fflush(stdout);
-
-  //Map device into memory
-  ret = e_debug_map(addr, (void **)&ptr, &offset);
-
-  //Read value from the device register  
-  *data = *((unsigned *)(ptr + offset));
-
-  //Unmap device memory
-  e_debug_unmap(ptr);
-
-  return 0;
-}
-//############################################
-//# Write to device
-//############################################
-int e_debug_write(unsigned addr, unsigned data) {
-  int  ret;
-  unsigned offset;
-  char *ptr;
-
-  //Debug
-  //printf("write addr=%08x data=%08x\n", addr, data);
-  //fflush(stdout);
-  //Map device into memory
-  ret = e_debug_map(addr, (void **)&ptr, &offset);
-
-  //Write to register
-  *((unsigned *)(ptr + offset)) = data;
-
-  //Unmap device memory
-  e_debug_unmap(ptr);
-
-  return 0;
-}
-
-//############################################
-//# Map Memory Using Generic Epiphany driver
-//############################################
-int e_debug_map(unsigned addr, void **ptr, unsigned *offset) {
-
-  unsigned page_addr; 
-
-  //What does this do??
-  if(!page_size)
-    page_size = sysconf(_SC_PAGESIZE);
-
-  //Open /dev/mem file if not already
-  if(mem_fd < 1) {
-    mem_fd = open ("/dev/epiphany", O_RDWR);
-    if (mem_fd < 1) {
-      perror("f_map");
-      return -1;
-    }
-  }
-
-  //Get page address
-  page_addr = (addr & (~(page_size-1)));
-
-  if(offset != NULL)
-    *offset = addr - page_addr;
-
-  //Perform mmap
-  *ptr = mmap(NULL, page_size, PROT_READ|PROT_WRITE, MAP_SHARED, 
-	      mem_fd, page_addr);
-
-  //Check for errors
-  if(*ptr == MAP_FAILED || !*ptr)
-      return -2;
-  else
-      return 0;
-}	
-
-//#########################################
-//# Unmap Memory
-//#########################################
-void e_debug_unmap(void *ptr) {
-  
-    //Unmap memory
-    if(ptr && page_size){
-	munmap(ptr, page_size);
-    }
 }

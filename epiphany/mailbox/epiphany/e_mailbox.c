@@ -1,5 +1,7 @@
 /*
-  e_mailbox.c
+  e_mailbox.c (based on e_hello_world)
+
+  Updated by Peter Saunderson
 
   Copyright (C) 2012 Adapteva, Inc.
   Contributed by Yaniv Sapir <yaniv@adapteva.com>
