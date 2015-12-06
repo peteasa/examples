@@ -228,7 +228,7 @@ static int epiphany_probe(struct platform_device *pdev)
 	// Map the rx registers for mailbox access
 	io = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	printk(KERN_INFO
-	       "epiphany_probe() - registers: start %x, end %x, name %s, flags %x\n",
+	       "epiphany_probe() - registers: start 0x%08lx, end 0x%08lx, name %s, flags %x\n",
 	       io->start, io->end, io->name, io->flags);
 
 	// for now keep it simple and dont reference the device tree stuff
@@ -239,7 +239,7 @@ static int epiphany_probe(struct platform_device *pdev)
 	if (IS_ERR(mailbox.reg_base))
 	{
 		dev_err(&pdev->dev, "failed to map mailbox registers\n");
-		return PTR_ERR(virt_base);
+		return PTR_ERR(mailbox.reg_base);
 	}
 	
 	// Get the mailbox irq from device tree
@@ -514,9 +514,7 @@ static inline void disable_mailbox_irq(void)
  * Return: IRQ_HANDLED/IRQ_NONE
  */
 static irqreturn_t mailbox_irq_handler(int irq, void *data)
-{
-	u32 cfg;
-	
+{	
 	// disable the interrupt	
 	disable_mailbox_irq();
 
