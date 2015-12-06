@@ -100,14 +100,7 @@ int main(int argc, char *argv[])
 	row = 0;
 	col = 0;
 	for (i=0; i<_SeqLen; i++)
-	{		
-	        // Enable the mailbox interrupt
-		if ( -1 == ioctl(devfd, EPIPHANY_IOC_MB_ENABLE) )
-		{
-			printf("main(): Failed to enable mailbox "
-			  "Error is %s\n", strerror(errno));
-		}
-
+	{
 		// Visit each core
 		unsigned lastCol = col;
 		col = col % platform.cols;
@@ -143,6 +136,18 @@ int main(int argc, char *argv[])
 			printf("main: Error in e_load %i\n", result);
 		}
 
+		// Enable the mailbox interrupt
+		//if ( -1 == ioctl(devfd, EPIPHANY_IOC_MB_ENABLE) )
+		//{
+		//	printf("main(): Failed to enable mailbox "
+		//	  "Error is %s\n", strerror(errno));
+		//}
+		int rxcfg = ee_read_esys(ELINK_RXCFG);
+		if (sizeof(int) != ee_write_esys(ELINK_RXCFG, rxcfg | (0x1 << 28)))
+		{
+			printf("main(): Failed to enable mailbox interrupt");
+		}
+
 		// Wait for core program execution to finish, then
 		// read message from shared buffer.
 		// TODO replace wait with wait on interrupt.. perhaps
@@ -155,7 +160,7 @@ int main(int argc, char *argv[])
 		printf("\"%s\"\n", emsg);
 
 		/* Temp removal of the following
-                   Seems to cause problems with visiting each core.
+                   Seems to cause problems with visiting each core. */
 		int items = ee_read_esys(ELINK_MAILBOXSTAT);
 		if (0 == items)
 		{
@@ -178,7 +183,8 @@ int main(int argc, char *argv[])
 			int post_stat   = ee_read_esys(ELINK_MAILBOXSTAT);
 			printf ("main(): PRE_STAT=%08x POST_STAT=%08x LO=%08x HI=%08x\n", pre_stat, post_stat, mbox_lo, mbox_hi);
 		}
-		*/
+		/**/
+		usleep(1000);
 		
 		e_close(&dev);
 	
