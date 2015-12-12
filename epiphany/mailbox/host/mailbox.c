@@ -78,7 +78,9 @@ static e_mem_t emem;
 #define ELINK_MAILBOXHI	(0xF0324)
 #define ELINK_MAILBOXSTAT (0xF0328)
 #define ELINK_TXCFG	(0xF0210)
+#define ETX_STATUS	(0xF0214)
 #define ELINK_RXCFG	(0xF0300)
+#define ERX_STATUS	(0xF0304)
 #define EPIPHANY_DEV "/dev/epiphany"
 #define MAILBOXSTATUSSIZE 10
 typedef struct _MAILBOX_CONTROL
@@ -146,7 +148,11 @@ int main(int argc, char *argv[])
 		returns = RunTest(&tc);
 
 		// If the test finishes early cancel the monitor progress
-		tc.cancelNow = 1;
+		if (!tc.cancelNow)
+		{
+			printf("main(): wait for SleepThenCancel thread to terminate\n");
+			tc.cancelNow = 1;
+		}
 
 		// Wait for monitor thread to complete
 		pthread_join(definedTestTimeThread, NULL);
@@ -174,7 +180,16 @@ int RunTest(test_control_t *tc)
 			break;
 		}
 
-		ArmMailboxNotifier();
+		int rxcfg1 = ee_read_esys(ELINK_RXCFG);
+		// returns = e_reset_system();
+		if (sizeof(int) != ee_write_esys(ELINK_RXCFG, 0x3e0fe04))
+		{
+			printf("RunTest(): Failed set rxcfg register\n");
+		}
+		
+		int rxcfg2 = ee_read_esys(ELINK_RXCFG);
+		int rxcfg3 = ee_read_esys(ELINK_RXCFG);
+		printf("RunTest(): rxcfg register 0x%x 0x%x 0x%x\n", rxcfg1, rxcfg2, rxcfg3);
 		
 		// Visit each core
 		unsigned lastCol = col;
@@ -191,7 +206,9 @@ int RunTest(test_control_t *tc)
 				break;
 			}
 		}
-		
+
+		ArmMailboxNotifier();
+
 		// Calculate the coreid
 		coreid = (row + platform.row) * 64 + col + platform.col;
 		printf("RunTest(): %3d: Message from eCore 0x%03x (%2d,%2d): ", i, coreid, row, col);
@@ -211,10 +228,7 @@ int RunTest(test_control_t *tc)
 			printf("RunTest(): Error in e_load %i\n", result);
 		}
 
-		// Keep the test alive
-		tc->keepalive++;
-
-		// Enable the mailbox interrupt
+				// Enable the mailbox interrupt
 		//if ( -1 == ioctl(devfd, EPIPHANY_IOC_MB_ENABLE) )
 		//{
 		//	printf("main(): Failed to enable mailbox "
@@ -227,23 +241,10 @@ int RunTest(test_control_t *tc)
 		{
 			printf("RunTest(): Failed to enable mailbox interrupt\n");
 		}
-	
-		int pre_stat    = ee_read_esys(ELINK_MAILBOXSTAT);
-		printf("RunTest(): pre_stat: %x\n", pre_stat);
-		int mbox_lo     = ee_read_esys(ELINK_MAILBOXLO);
-		printf("RunTest(): mbox_lo: %x\n", mbox_lo);
-		mbox_lo     = ee_read_esys(ELINK_MAILBOXLO);
-		printf("RunTest(): mbox_lo: %x\n", mbox_lo);
-		int mbox_hi     = ee_read_esys(ELINK_MAILBOXHI);
-		printf("RunTest(): mbox_hi: %x\n", mbox_hi);
-		mbox_hi     = ee_read_esys(ELINK_MAILBOXHI);
-		printf("RunTest(): mbox_hi: %x\n", mbox_hi);
-		mbox_lo     = ee_read_esys(ELINK_MAILBOXLO);
-		printf("RunTest(): mbox_lo: %x\n", mbox_lo);
-		pre_stat    = ee_read_esys(ELINK_MAILBOXSTAT);
-		printf("RunTest(): post_stat: %x\n", pre_stat);
-		
-		
+
+		// Keep the test alive
+		tc->keepalive++;
+
 		// Wait for core program execution to finish, then
 		// read message from shared buffer.
 		returns = WaitForMailboxNotifier();
@@ -259,7 +260,7 @@ int RunTest(test_control_t *tc)
 		printf("\"%s\"\n", emsg);
 
 		/* Temp removal of the following
-                   Seems to cause problems with visiting each core. 
+                   Seems to cause problems with visiting each core. */
 		// Read the mailbox
 		int mbentries;
 		for (mbentries = 0; mbentries < _SeqLen; mbentries++)
@@ -273,10 +274,14 @@ int RunTest(test_control_t *tc)
 			int mbox_lo     = ee_read_esys(ELINK_MAILBOXLO);
 			int mbox_hi     = ee_read_esys(ELINK_MAILBOXHI);
 			int post_stat   = ee_read_esys(ELINK_MAILBOXSTAT);
-			printf ("main(): PRE_STAT=%08x POST_STAT=%08x LO=%08x HI=%08x\n", pre_stat, post_stat, mbox_lo, mbox_hi);
+			printf ("RunTest(): PRE_STAT=%08x POST_STAT=%08x LO=%08x HI=%08x\n", pre_stat, post_stat, mbox_lo, mbox_hi);
 		}
-		*/
-		usleep(1000);
+
+		int etx_status = ee_read_esys(ETX_STATUS);
+		int etx_config = ee_read_esys(ELINK_TXCFG);
+		int erx_status = ee_read_esys(ERX_STATUS);
+		int erx_config = ee_read_esys(ELINK_RXCFG);
+		printf("RunTest(): etx_status: 0x%x, etx_config: 0x%x, erx_status: 0x%x, erx_config: 0x%x\n", etx_status, etx_config, erx_status, erx_config);
 		
 		e_close(&dev);
 	
@@ -314,7 +319,12 @@ void *SleepThenCancel( void *ptr )
 	{
 		int oldkeepalive = tc->keepalive;
 		usleep(4000000);
-		if (tc->cancelNow || (tc->keepalive == oldkeepalive))
+		if (tc->cancelNow)
+		{
+			break;
+		}
+
+		if (tc->keepalive == oldkeepalive)
 		{
 			printf ("\nINFO: SleepThenCancel(): Cancelling!\n");
 			break;
