@@ -1,8 +1,13 @@
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
-#include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/pid.h>
+#include <linux/fdtable.h>
+#include <linux/rcupdate.h>
+#include <linux/eventfd.h>
+#include <linux/workqueue.h>
 #include <linux/fs.h>
 #include <linux/mm.h>
 #include <linux/cdev.h>
@@ -46,9 +51,62 @@ MODULE_LICENSE("GPL");
 #define ERX_REG_START 0x810F0300
 #define ERX_REG_END 0x810F03FF
 #define ERX_CFG 0x0 		// 0xF0300
-#define MAILBOX_LO 0x20 	// 0xF0320
+#define MAILBOX_LO_REG 0x20 	// 0xF0320
+#define MAILBOX_HI_REG 0x24 	// 0xF0324
 #define MAILBOX_STATE 0x28 	// 0xF0328
 #define MAILBOX_ENABLE (0x1 << 28) 	// bit 28 in ERX_CFG
+
+static int major = 0;
+static dev_t dev_no = 0;
+static struct cdev epiphany_cdev;
+static struct class *class_epiphany = 0;
+static struct device *dev_epiphany = 0;
+static epiphany_alloc_t global_shm;
+
+/* Work stucture */
+static struct workqueue_struct *irq_workqueue;
+typedef struct
+{
+	struct work_struct work;
+	struct task_struct * userspace_task;
+} irq_work_t;
+
+struct epiphany_mailbox {
+	irq_work_t irq_work;	// @ start of structure so that work is at start
+	unsigned int irq;
+	void __iomem *reg_base;
+};
+static struct epiphany_mailbox mailbox;
+
+static struct eventfd_ctx * efd_ctx = NULL;
+static int mailbox_notifier = -1;
+static int mailbox_lo = 0;
+static int mailbox_hi = 0;
+
+// mailbox_notifier is the eventfd sent by ioctl to the driver.
+// Use epoll_wait on the user side to detect the arrival of
+// an interrupt.  Note epoll_wait can be cancelled by
+// waiting on a second eventfd descriptor.
+DEVICE_INT_ATTR(mailbox_notifier, S_IRUGO, mailbox_notifier);
+
+// mailbox content is read during interrupt servicing
+// the user side code can read the sysfs files for the messages
+DEVICE_INT_ATTR(mailbox_lo, S_IRUGO, mailbox_lo);
+DEVICE_INT_ATTR(mailbox_hi, S_IRUGO, mailbox_hi);
+
+static struct attribute *attrs[] = {
+    &dev_attr_mailbox_notifier.attr.attr, NULL,
+    &dev_attr_mailbox_lo.attr.attr, NULL,
+    &dev_attr_mailbox_hi.attr.attr, NULL,
+};
+
+static struct attribute_group attr_group = {
+    .attrs = attrs,
+};
+
+static const struct attribute_group *attr_groups[] = {
+    &attr_group, NULL,
+};
 
 /* Function prototypes */
 static int epiphany_of_probe(struct platform_device *op);
@@ -61,9 +119,14 @@ static int epiphany_release(struct inode *, struct file *);
 static int epiphany_map_host_memory(struct vm_area_struct *vma);
 static int epiphany_map_device_memory(struct vm_area_struct *vma);
 static int epiphany_mmap(struct file *, struct vm_area_struct *);
+static long epiphany_ioctl(struct file *, unsigned int, unsigned long);
+static void reg_write(struct epiphany_mailbox *mailbox, u32 reg, u32 val);
+static u32 reg_read(struct epiphany_mailbox *mailbox, u32 reg);
 static void enable_mailbox_irq(void);
 static void disable_mailbox_irq(void);
-static long epiphany_ioctl(struct file *, unsigned int, unsigned long);
+static int read_mailbox_lo(void);
+static int read_mailbox_hi(void);
+static void irq_work_func(struct work_struct *work);
 static irqreturn_t mailbox_irq_handler(int irq, void *data);
 
 static struct file_operations epiphany_fops = {
@@ -73,21 +136,6 @@ static struct file_operations epiphany_fops = {
 	.mmap = epiphany_mmap,
 	.unlocked_ioctl = epiphany_ioctl
 };
-
-static int major = 0;
-static dev_t dev_no = 0;
-static struct cdev epiphany_cdev;
-static struct class *class_epiphany = 0;
-static struct device *dev_epiphany = 0;
-static epiphany_alloc_t global_shm;
-
-struct epiphany_mailbox {
-	unsigned int irq;
-	struct tasklet_struct tasklet;
-	void __iomem *reg_base;
-};
-	
-static struct epiphany_mailbox mailbox;
 
 #ifdef CONFIG_OF
 /* Match table for device tree binding */
@@ -150,6 +198,9 @@ static int __init epiphany_init(void)
 		retval = PTR_ERR(ptr_err);
 		goto err2;
 	}
+
+	// Assign the attribute groups to create the sysfs files
+	class_epiphany->dev_groups = attr_groups;
 
 	// Register the driver with platform
 	// unregistered in .exit
@@ -229,7 +280,7 @@ static int epiphany_probe(struct platform_device *pdev)
 	io = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	printk(KERN_INFO
 	       "epiphany_probe() - registers: start 0x%08lx, end 0x%08lx, name %s, flags %x\n",
-	       io->start, io->end, io->name, io->flags);
+	       (unsigned long)io->start, (unsigned long)io->end, io->name, io->flags);
 
 	// for now keep it simple and dont reference the device tree stuff
 	// not sure if ioremap here will prevent other user space mmap!
@@ -263,10 +314,13 @@ static int epiphany_probe(struct platform_device *pdev)
 		goto err;
 	}
 	
-	// Initialize the tasklet
+	// Initialize the workqueue
 	// Killed on error and in .remove
-	//tasklet_init(&mailbox.tasklet, mailbox_tasklet,
-	//		(unsigned long)&mailbox);
+	irq_workqueue = create_workqueue("irq_work_queue");
+	if (irq_workqueue)
+	{
+		INIT_WORK(((struct work_struct *)&mailbox), irq_work_func);
+	}
 
 	// Initialize the cdev structure
 	// deleted on error and in .remove
@@ -296,7 +350,7 @@ static int epiphany_probe(struct platform_device *pdev)
 err2:
 	cdev_del(&epiphany_cdev);
 err1:
-	// tasklet_kill(&mailbox.tasklet);
+	destroy_workqueue(irq_workqueue);
 	devm_free_irq(&pdev->dev, mailbox.irq, &mailbox);
 err:
 	return retval;
@@ -313,8 +367,11 @@ static int epiphany_remove(struct platform_device *pdev)
 		devm_free_irq(&pdev->dev, mailbox.irq, &mailbox);
 	}
 
-	// Kill tasklet
-	//tasklet_kill(&mailbox.tasklet);
+	// flush the queue
+	flush_workqueue(irq_workqueue);
+	
+	// destroy the queue
+	destroy_workqueue(irq_workqueue);
 	
 #if (UseReservedMem == 0)
 	free_pages(global_shm.kvirt_addr, get_order(global_shm.size));
@@ -431,7 +488,8 @@ static long epiphany_ioctl(struct file *file, unsigned int cmd,
 	int retval = 0;
 	int err = 0;
 	epiphany_alloc_t *ealloc = NULL;
-
+	mailbox_notifier_t notifier;
+ 
 	if (_IOC_TYPE(cmd) != EPIPHANY_IOC_MAGIC) {
 		return -ENOTTY;
 	}
@@ -470,6 +528,36 @@ static long epiphany_ioctl(struct file *file, unsigned int cmd,
 	case EPIPHANY_IOC_MB_DISABLE:
 		disable_mailbox_irq();
 		break;
+
+	case EPIPHANY_IOC_MB_NOTIFIER:
+		// TODO lock access
+		if (copy_from_user(&notifier, (void __user *)arg, sizeof(mailbox_notifier_t)))
+		{
+			printk(KERN_ERR "EPIPHANY_IOC_MB_NOTIFIER - failed\n");
+			retval = -EACCES;
+		}
+
+		if (notifier.old_notifier != mailbox_notifier)
+		{
+			printk(KERN_ERR "EPIPHANY_IOC_MB_NOTIFIER - %d != %d\n", notifier.old_notifier, mailbox_notifier);
+			retval = -EACCES;
+		}
+		else
+		{
+			// flush the queue
+			flush_workqueue(irq_workqueue);
+			mailbox_notifier = notifier.new_notifier;
+		}
+
+		if (0 < mailbox_notifier)
+		{
+			// Save the userspace task for later use
+			mailbox.irq_work.userspace_task = pid_task(find_vpid(current->pid), PIDTYPE_PID);
+		}
+	     
+		// TODO unlock
+		break;
+			
 		
 	default:		/* Redundant, cmd was checked against MAXNR */
 		return -ENOTTY;
@@ -506,6 +594,46 @@ static inline void disable_mailbox_irq(void)
 	reg_write(&mailbox, ERX_CFG, cfg & ~MAILBOX_ENABLE);
 }
 
+static inline int read_mailbox_lo(void)
+{
+        return reg_read(&mailbox, MAILBOX_LO_REG);
+}
+
+static inline int read_mailbox_hi(void)
+{
+	return reg_read(&mailbox, MAILBOX_HI_REG);
+}
+
+static void irq_work_func(struct work_struct *work)
+{
+	irq_work_t * irq_work = (irq_work_t *)work;
+	struct file * efd_file = NULL;
+
+	// Read the mailbox to clear the interrupt source
+	// TODO uncomment these lines once read, e_load bug fixed
+	//mailbox_lo = read_mailbox_lo();
+	//mailbox_hi = read_mailbox_hi();
+		
+	// current file is always used at the time of the interrupt
+	if (0 < mailbox_notifier)
+	{
+		rcu_read_lock();
+		efd_file = fcheck_files(irq_work->userspace_task->files, mailbox_notifier);
+		rcu_read_unlock();
+		// printk(KERN_ALERT "EPIPHANY_IOC_MB_NOTIFIER: %p\n", efd_file);
+
+		efd_ctx = eventfd_ctx_fileget(efd_file);
+		if (!efd_ctx)
+		{
+			printk(KERN_ALERT "EPIPHANY_IOC_MB_NOTIFIER: failed to get file\n");
+			return;
+		}
+
+		// sent the event
+		eventfd_signal(efd_ctx, 1);
+	}
+}
+
 /**
  * mailbox_irq_handler - Mailbox Interrupt handler
  * @irq: IRQ number
@@ -514,13 +642,14 @@ static inline void disable_mailbox_irq(void)
  * Return: IRQ_HANDLED/IRQ_NONE
  */
 static irqreturn_t mailbox_irq_handler(int irq, void *data)
-{	
+{
 	// disable the interrupt	
 	disable_mailbox_irq();
-
-	// run tasklet to read the state	
-	// u32 state = reg_read(&mailbox, MAILBOX_STATE);
-	// and write state to sysfs
+	
+	if (0 < mailbox_notifier && irq_workqueue)
+	{
+		queue_work(irq_workqueue, &mailbox.irq_work.work);
+	}
 	
 	return IRQ_HANDLED;
 }
