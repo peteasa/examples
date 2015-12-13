@@ -19,6 +19,9 @@ mkdir /usr/bin/epiphany-elf
 ln -s /usr/bin/epiphany-elf-gcc /usr/bin/epiphany-elf/gcc
 ln -s /usr/bin/epiphany-elf-objcopy /usr/bin/epiphany-elf/objcopy
 
+## make linux uapi available for applications that use the epiphany driver
+ln -s /usr/src/kernel/include/uapi/linux /usr/include/uapi/linux
+
 ##
 ## The end!
 ##

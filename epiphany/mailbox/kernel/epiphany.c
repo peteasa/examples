@@ -47,14 +47,13 @@ MODULE_LICENSE("GPL");
 #define PL_MEM_START            0x40000000UL
 #define PL_MEM_END              0x80000000UL
 
-#define MAILBOX_IRQ 57
 #define ERX_REG_START 0x810F0300
 #define ERX_REG_END 0x810F03FF
-#define ERX_CFG 0x0 		// 0xF0300
+#define ERX_CFG_REG 0x0 	// 0xF0300
 #define MAILBOX_LO_REG 0x20 	// 0xF0320
 #define MAILBOX_HI_REG 0x24 	// 0xF0324
 #define MAILBOX_STATE 0x28 	// 0xF0328
-#define MAILBOX_ENABLE (0x1 << 28) 	// bit 28 in ERX_CFG
+#define MAILBOX_ENABLE (0x1 << 28) 	// bit 28 in ERX_CFG_REG
 
 static int major = 0;
 static dev_t dev_no = 0;
@@ -71,12 +70,12 @@ typedef struct
 	struct task_struct * userspace_task;
 } irq_work_t;
 
-struct epiphany_mailbox {
+typedef struct {
 	irq_work_t irq_work;	// @ start of structure so that work is at start
 	unsigned int irq;
 	void __iomem *reg_base;
-};
-static struct epiphany_mailbox mailbox;
+} epiphany_mailbox_t;
+static epiphany_mailbox_t mailbox;
 
 static struct eventfd_ctx * efd_ctx = NULL;
 static int mailbox_notifier = -1;
@@ -120,8 +119,8 @@ static int epiphany_map_host_memory(struct vm_area_struct *vma);
 static int epiphany_map_device_memory(struct vm_area_struct *vma);
 static int epiphany_mmap(struct file *, struct vm_area_struct *);
 static long epiphany_ioctl(struct file *, unsigned int, unsigned long);
-static void reg_write(struct epiphany_mailbox *mailbox, u32 reg, u32 val);
-static u32 reg_read(struct epiphany_mailbox *mailbox, u32 reg);
+static void reg_write(epiphany_mailbox_t *mailbox, u32 reg, u32 val);
+static u32 reg_read(epiphany_mailbox_t *mailbox, u32 reg);
 static void enable_mailbox_irq(void);
 static void disable_mailbox_irq(void);
 static int read_mailbox_lo(void);
@@ -566,12 +565,12 @@ static long epiphany_ioctl(struct file *file, unsigned int cmd,
 	return retval;
 }
 
-static inline void reg_write(struct epiphany_mailbox *mailbox, u32 reg, u32 val)
+static inline void reg_write(epiphany_mailbox_t *mailbox, u32 reg, u32 val)
 {
 	iowrite32(val, mailbox->reg_base + reg);
 }
 
-static inline u32 reg_read(struct epiphany_mailbox *mailbox, u32 reg)
+static inline u32 reg_read(epiphany_mailbox_t *mailbox, u32 reg)
 {
 	return ioread32(mailbox->reg_base + reg);
 }
@@ -580,18 +579,18 @@ static inline void enable_mailbox_irq(void)
 {
 	u32 cfg;
 	
-	// How to lock ERX_CFG access - could be used from user side at same time!
-	cfg = reg_read(&mailbox, ERX_CFG);
-	reg_write(&mailbox, ERX_CFG, cfg | MAILBOX_ENABLE);
+	// How to lock ERX_CFG_REG access - could be used from user side at same time!
+	cfg = reg_read(&mailbox, ERX_CFG_REG);
+	reg_write(&mailbox, ERX_CFG_REG, cfg | MAILBOX_ENABLE);
 }
 
 static inline void disable_mailbox_irq(void)
 {
 	u32 cfg;
 
-	// How to lock ERX_CFG access - could be used from user side at same time!
-	cfg = reg_read(&mailbox, ERX_CFG);
-	reg_write(&mailbox, ERX_CFG, cfg & ~MAILBOX_ENABLE);
+	// How to lock ERX_CFG_REG access - could be used from user side at same time!
+	cfg = reg_read(&mailbox, ERX_CFG_REG);
+	reg_write(&mailbox, ERX_CFG_REG, cfg & ~MAILBOX_ENABLE);
 }
 
 static inline int read_mailbox_lo(void)
@@ -609,10 +608,11 @@ static void irq_work_func(struct work_struct *work)
 	irq_work_t * irq_work = (irq_work_t *)work;
 	struct file * efd_file = NULL;
 
+	// TODO consider implementing a fifo so that all the mailbox entries
+	// can be read, however this might over complicate the user side
 	// Read the mailbox to clear the interrupt source
-	// TODO uncomment these lines once read, e_load bug fixed
-	//mailbox_lo = read_mailbox_lo();
-	//mailbox_hi = read_mailbox_hi();
+	mailbox_lo = read_mailbox_lo();
+	mailbox_hi = read_mailbox_hi();
 		
 	// current file is always used at the time of the interrupt
 	if (0 < mailbox_notifier)
@@ -620,16 +620,19 @@ static void irq_work_func(struct work_struct *work)
 		rcu_read_lock();
 		efd_file = fcheck_files(irq_work->userspace_task->files, mailbox_notifier);
 		rcu_read_unlock();
-		// printk(KERN_ALERT "EPIPHANY_IOC_MB_NOTIFIER: %p\n", efd_file);
+		// printk(KERN_INFO "EPIPHANY_IOC_MB_NOTIFIER: %p\n", efd_file);
 
 		efd_ctx = eventfd_ctx_fileget(efd_file);
 		if (!efd_ctx)
 		{
-			printk(KERN_ALERT "EPIPHANY_IOC_MB_NOTIFIER: failed to get file\n");
+			printk(KERN_ERR "EPIPHANY_IOC_MB_NOTIFIER: failed to get eventfd file\n");
+			// TODO consider setting mailbox_notifier back to default
+			// this might complicate the user side
+			// mailbox_notifier = -1;
 			return;
 		}
 
-		// sent the event
+		// send the event
 		eventfd_signal(efd_ctx, 1);
 	}
 }
@@ -637,18 +640,20 @@ static void irq_work_func(struct work_struct *work)
 /**
  * mailbox_irq_handler - Mailbox Interrupt handler
  * @irq: IRQ number
- * @data: Pointer to ??
+ * @data: Pointer to 
  *
  * Return: IRQ_HANDLED/IRQ_NONE
  */
 static irqreturn_t mailbox_irq_handler(int irq, void *data)
 {
+	epiphany_mailbox_t *mailbox = (epiphany_mailbox_t *)data;
+
 	// disable the interrupt	
 	disable_mailbox_irq();
 	
 	if (0 < mailbox_notifier && irq_workqueue)
 	{
-		queue_work(irq_workqueue, &mailbox.irq_work.work);
+		queue_work(irq_workqueue, &mailbox->irq_work.work);
 	}
 	
 	return IRQ_HANDLED;

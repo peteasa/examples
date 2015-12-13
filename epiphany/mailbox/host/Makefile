@@ -21,7 +21,8 @@ INCLUDES    	=
 LIB_PATHS   	= 
 LIBS        	= \
 	-le-hal \
-	-le-loader
+	-le-loader \
+	-lpthread
 
 # base location for release
 prefix ?= $(OECORE_NATIVE_SYSROOT)/usr
@@ -48,9 +49,15 @@ bindir ?= $(exec_prefix)/bin
 # https://gcc.gnu.org/onlinedocs/cpp/Preprocessor-Output.html
 # CFLAGS = -E -dD
 
+## mailbox uses epiphany device so add the include path
+ifeq ($(PARALLELLA_LINUX_HOME),)
+	PARALLELLA_LINUX_HOME:=/usr/src/kernel
+endif
+
+INCLUDES	= -I$(PARALLELLA_LINUX_HOME)/include/uapi
 EXTRACFLAGS  	= 
 CXXFLAGS 	+= 
-CFLAGS 		+= $(LIB_PATHS) $(LIBS)
+CFLAGS 		+= $(LIB_PATHS) $(LIBS) $(INCLUDES)
 LDFLAGS		+=
 
 .PHONY : clean uninstall

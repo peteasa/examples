@@ -47,26 +47,6 @@
 #include <linux/ioctl.h>
 #include <uapi/linux/epiphany.h> // for ioctl numbers
 
-// Following goes into epiphany.h
-
-typedef struct _MAILBOX_NOTIFIER
-{
-	int old_notifier;
-	int new_notifier;
-} mailbox_notifier_t;
-
-#define EPIPHANY_IOC_MB_NOTIFIER_CMD	27
-
-#define EPIPHANY_IOC_MAXNR	27
- 
-#define EPIPHANY_IOC_MB_NOTIFIER _IOW(EPIPHANY_IOC_MAGIC, EPIPHANY_IOC_MB_NOTIFIER_CMD, mailbox_notifier_t *)
-
-/**
- * mailbox notifier file
- */
-#define MAILBOX_NOTIFIER "/sys/class/epiphany/epiphany/mailbox_notifier"
-//
-
 // Test message store
 #define _BufSize   (128)
 #define _BufOffset (0x01000000)
@@ -182,6 +162,7 @@ int RunTest(test_control_t *tc)
 
 		int rxcfg1 = ee_read_esys(ELINK_RXCFG);
 		// returns = e_reset_system();
+		// set: static remap, remap mask 0xfe0, pattern 0x3e0
 		if (sizeof(int) != ee_write_esys(ELINK_RXCFG, 0x3e0fe04))
 		{
 			printf("RunTest(): Failed set rxcfg register\n");
