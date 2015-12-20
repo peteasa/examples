@@ -94,8 +94,8 @@ DEVICE_INT_ATTR(mailbox_lo, S_IRUGO, mailbox_lo);
 DEVICE_INT_ATTR(mailbox_hi, S_IRUGO, mailbox_hi);
 
 static struct attribute *attrs[] = {
-    &dev_attr_mailbox_notifier.attr.attr, NULL,
-    &dev_attr_mailbox_lo.attr.attr, NULL,
+    &dev_attr_mailbox_notifier.attr.attr,
+    &dev_attr_mailbox_lo.attr.attr,
     &dev_attr_mailbox_hi.attr.attr, NULL,
 };
 
@@ -123,8 +123,8 @@ static void reg_write(epiphany_mailbox_t *mailbox, u32 reg, u32 val);
 static u32 reg_read(epiphany_mailbox_t *mailbox, u32 reg);
 static void enable_mailbox_irq(void);
 static void disable_mailbox_irq(void);
-static int read_mailbox_lo(void);
-static int read_mailbox_hi(void);
+static u32 read_mailbox_lo(void);
+static u32 read_mailbox_hi(void);
 static void irq_work_func(struct work_struct *work);
 static irqreturn_t mailbox_irq_handler(int irq, void *data);
 
@@ -593,14 +593,14 @@ static inline void disable_mailbox_irq(void)
 	reg_write(&mailbox, ERX_CFG_REG, cfg & ~MAILBOX_ENABLE);
 }
 
-static inline int read_mailbox_lo(void)
+static inline u32 read_mailbox_lo(void)
 {
-        return reg_read(&mailbox, MAILBOX_LO_REG);
+        return reg_read(&mailbox, (u32)MAILBOX_LO_REG);
 }
 
-static inline int read_mailbox_hi(void)
+static inline u32 read_mailbox_hi(void)
 {
-	return reg_read(&mailbox, MAILBOX_HI_REG);
+	return reg_read(&mailbox, (u32)MAILBOX_HI_REG);
 }
 
 static void irq_work_func(struct work_struct *work)
@@ -608,12 +608,9 @@ static void irq_work_func(struct work_struct *work)
 	irq_work_t * irq_work = (irq_work_t *)work;
 	struct file * efd_file = NULL;
 
-	// TODO consider implementing a fifo so that all the mailbox entries
-	// can be read, however this might over complicate the user side
-	// Read the mailbox to clear the interrupt source
-	mailbox_lo = read_mailbox_lo();
-	mailbox_hi = read_mailbox_hi();
-		
+	mailbox_lo = (int)read_mailbox_lo();
+	mailbox_hi = (int)read_mailbox_hi();
+
 	// current file is always used at the time of the interrupt
 	if (0 < mailbox_notifier)
 	{
@@ -650,7 +647,7 @@ static irqreturn_t mailbox_irq_handler(int irq, void *data)
 
 	// disable the interrupt	
 	disable_mailbox_irq();
-	
+
 	if (0 < mailbox_notifier && irq_workqueue)
 	{
 		queue_work(irq_workqueue, &mailbox->irq_work.work);
