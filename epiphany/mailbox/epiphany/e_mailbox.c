@@ -34,7 +34,7 @@
 #include "e_lib.h"
 
 #define ELINK_BASE	0x81000000
-#define E_MAILBOXLO	0xF0320
+#define E_MAILBOXLO	0xF0730
 
 #define USE_DMA 1
 #ifdef USE_DMA

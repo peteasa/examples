@@ -1,8 +1,8 @@
 /************************************************************
  
-  mailbox.c
+  simplememory.c
  
-  A test for the oh mailbox using the updated epiphany kernel driver
+  A memory test using the updated epiphany kernel driver
  
   Copyright (c) 2015-2016 Peter Saunderson <peteasa@gmail.com>
 
@@ -48,8 +48,9 @@
 #include <uapi/linux/epiphany.h> // for ioctl numbers
 
 // Test message store
-#define _BufSize   (128)
-#define _BufOffset (0x01000000)
+#define _BuffSize   (0x2000)
+#define _SharedBuffOffset (0x01005000)
+#define _LocalBuffOffset (0x5000)
 static e_mem_t emem;
 
 // Mailbox defines
@@ -119,10 +120,10 @@ static int idelay[TAPS]={0x00000000,0x00000000,//0
 static e_platform_t platform;
 
 static e_epiphany_t dev;
-static char emsg[_BufSize];
+static char emsg[_BuffSize];
 
 // Test control stuff
-#define _SeqLen    (4)
+#define _SeqLen    (6)
 typedef struct _TEST_CONTROL
 {
 	int cancelNow;  // TODO replace with a semaphore
@@ -149,6 +150,9 @@ int ArmMailboxNotifier();
 int WaitForMailboxNotifier();
 void PrintStuffOfInterest();
 int setup_system(void);
+void WriteTestPatternsToMemory(e_mem_t *emem, e_epiphany_t *dev);
+void ReadTestPatternsFromMemory(e_mem_t *emem, e_epiphany_t *dev, int initval, int incr);
+int CheckTestPatterns(int initval, int incr);
 
 int main(int argc, char *argv[])
 {
@@ -270,12 +274,15 @@ int RunTest(test_control_t *tc)
 		e_open(&dev, row, col, 1, 1);
 		e_reset_group(&dev);
 
+		WriteTestPatternsToMemory(&emem, &dev);
+		ReadTestPatternsFromMemory(&emem, &dev, 0xff, -1);
+
 		// Load the device program onto the selected eCore
 		// and launch after loading.
-		printf("main(%d,%d): Load core\n", row, col);
-		printf("RunTest(): %3d: Message from eCore 0x%03x (%2d,%2d): ", i, coreid, row, col);
+		printf("RunTest(%d,%d): %3d, Load core\n", row, col, i);
+
 		e_return_stat_t result;
-		result = e_load("/usr/epiphany/bin/e_mailbox.srec", &dev, 0, 0, E_TRUE);
+		result = e_load("/usr/epiphany/bin/e_memory.srec", &dev, 0, 0, E_TRUE);
 		if (result != E_OK)
 		{
 			printf("RunTest(): Error in e_load %i\n", result);
@@ -289,20 +296,17 @@ int RunTest(test_control_t *tc)
 		PrintStuffOfInterest();
 
 		// Wait for core program execution to finish, then
-		// read message from shared buffer.
+		// read test results from shared buffer.
 		returns = WaitForMailboxNotifier();
 
 		// Keep the test alive
 		tc->keepalive++;
-	
-		e_read(&emem, 0, 0, 0x0, emsg, _BufSize);
 
-		// Print the message and close the workgroup.
-		printf("\"%s\"\n", emsg);
-
+		ReadTestPatternsFromMemory(&emem, &dev, 0x0, 1);
+		
 		// Read the mailbox
 		int mbentries;
-		for (mbentries = 0; mbentries < _SeqLen; mbentries++)
+		for (mbentries = 0; mbentries < 32; mbentries++)
 		{
 			int pre_stat    = ee_read_esys(ELINK_MAILBOXSTAT);
 			int mbox_lo     = ee_read_esys(ELINK_MAILBOXLO);
@@ -312,6 +316,9 @@ int RunTest(test_control_t *tc)
 
 			if (0 == post_stat)
 			{
+				if (mbox_lo) printf("ERROR: e-task 0x%x read errors for local memory, last error at 0x%x\n", mbox_lo & 0xffff, (mbox_lo>>16) & 0xffff);
+				if (mbox_hi) printf("ERROR: e-task 0x%x read errors for shared memory, last error at 0x%x\n", mbox_hi & 0xffff, (mbox_hi>>16) & 0xffff);
+
 				break;
 			}
 		}
@@ -322,6 +329,81 @@ int RunTest(test_control_t *tc)
 	}
 	
 	return 0;
+}
+
+int CheckTestPatterns(int initval, int incr)
+{
+	char val = initval;
+	int count;
+	int failures=0;
+	int passes = 0;
+	int reports = 0;
+
+	for (count=0; count<_BuffSize; count++)
+	{
+		if (emsg[count] != val)
+		{
+			failures++;
+		}
+		else
+		{
+			passes++;
+		}
+
+		if (0<failures && 10>reports)
+		{
+			printf("INFO: Read 0x%x, should be 0x%x\n", emsg[count], val);
+			reports++;
+		}
+		val += incr;
+	}
+
+	if (0<failures)
+	{
+		printf("ERROR: 0x%x memory read failures, 0x%x passes\n", failures, passes);
+	}
+
+	return failures;
+}
+
+void ReadTestPatternsFromMemory(e_mem_t *emem, e_epiphany_t *dev, int initval, int incr)
+{
+	// read message from shared buffer.
+	e_read(emem, 0, 0, (off_t)0x0, (void*)emsg, _BuffSize);
+
+	if (CheckTestPatterns(initval, incr))
+	{
+		printf("ERROR: Shared memory check failed!\n");
+	}    
+
+	// read message from local buffer.
+	e_read(dev, 0, 0, (off_t)(_LocalBuffOffset), (void*)emsg, _BuffSize);
+
+	if (CheckTestPatterns(initval, incr))
+	{
+		printf("ERROR: Local memory check failed!\n");
+	}
+}
+
+void WriteTestPatternsToMemory(e_mem_t *emem, e_epiphany_t *dev)
+{
+	char val = 0xff; //_BuffSize - 1;
+	int count;
+	int failures=0;
+	int passes = 0;
+	int reports = 0;
+
+	for (count=0; count<_BuffSize; count++)
+	{
+		emsg[count] = val;
+		val--;
+	}
+
+	// write message to shared buffer.
+	e_write((void*)emem, 0, 0, (off_t)0x0, (void*)emsg, _BuffSize);
+
+	// write message to local buffer.
+	e_write((void*)dev, 0, 0, (off_t)(_LocalBuffOffset), (void*)emsg,  _BuffSize);
 }
 
 void PrintStuffOfInterest()
@@ -444,7 +526,7 @@ int InitialTestMessageStore()
 {
 	// Allocate a buffer in shared external memory
 	// for message passing from eCore to host.
-	return e_alloc(&emem, _BufOffset, _BufSize);
+	return e_alloc(&emem, _SharedBuffOffset, _BuffSize);
 }
 
 void CloseTestMessageStore()
