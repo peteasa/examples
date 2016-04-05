@@ -78,8 +78,9 @@ int main(void)
 		dst = (char*)(_LocalBuffOffset + count*sizeof(message));
 		e_read(&e_group_config, &message, 0,0, dst, sizeof(message));
 
-		// Limit the number of samples sent to the mailbox!
-		if (_NoMessages>count) e_memcopy(mailbox, &message, sizeof(message));
+		// Writing to the mailbox at the same time as reading from the host side
+		// Seems to be a problem so for now only send mailbox messages at end
+		// if (_NoMessages>count) e_memcopy(mailbox, &message, sizeof(message));
 	  
 		checkandupdate(count, (void*)&message, sizeof(message), &localfailures, &locallocation, &localfailure, &localcheck, &localval);
 
@@ -89,8 +90,9 @@ int main(void)
 		dst = (char*)(shared + count*sizeof(message));
 		e_memcopy((void *)&message, (void *)dst, sizeof(message));
 
-		// Limit the number of samples sent to the mailbox!
-		if (_NoMessages>count) e_memcopy(mailbox, &message, sizeof(message));
+		// Writing to the mailbox at the same time as reading from the host side
+		// Seems to be a problem so for now only send mailbox messages at end
+		// if (_NoMessages>count) e_memcopy(mailbox, &message, sizeof(message));
 	  
 		checkandupdate(count, (void*)&message, sizeof(message), &sharedfailures, &sharedlocation, &sharedfailure, &sharedcheck, &sharedval);
 	  
@@ -105,11 +107,22 @@ int main(void)
 	// message = (long long)&message; - 0x7fc0
 	// message = (long long)&shared - 0xffffffff8f000000
 	// message = (long long)&shared[_BuffSize];- 0xffffffff8f001000
-  
+
 	for (count = 0; count<_NoMessages; count++)
 	{
+		// Read/Write from/to local memory
+		dst = (char*)(_LocalBuffOffset + count*sizeof(message));
+		e_read(&e_group_config, &message, 0,0, dst, sizeof(message));
+		
 		e_memcopy(mailbox, &message, sizeof(message));
-		//message++;
+		
+		// Read/Write from/to shared memory
+		dst = (char*)(shared + (count+_NoMessages)*sizeof(message));
+		e_memcopy((void *)&message, (void *)dst, sizeof(message));
+
+		e_memcopy(mailbox, &message, sizeof(message));
+
+		// message++;
 	}
 
 	// In last message report the number of read failures

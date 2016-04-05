@@ -123,7 +123,7 @@ static e_epiphany_t dev;
 static char emsg[_BuffSize];
 
 // Test control stuff
-#define _SeqLen    (6)
+#define _SeqLen    (100)
 typedef struct _TEST_CONTROL
 {
 	int cancelNow;  // TODO replace with a semaphore
@@ -200,6 +200,13 @@ int RunTest(test_control_t *tc)
 		return -1;
 	}
 	rxcfg.reg = ee_read_esys(E_SYS_RXCFG);
+	printf("RunTest(): write shadow ERX_CFG_REG = 0x%08x\n", rxcfg.reg);
+	       
+	if ( -1 == ioctl(mc.devfd, EPIPHANY_IOC_ERX_CFG_REG, &rxcfg.reg) )
+	{
+		printf("RunTest(): Failed to write shadow ERX_CFG_REG"
+		  "Error is %s\n", strerror(errno));
+	}
 
 	// This should go into the epiphany initialization
 	int delayNo = 7;
@@ -293,7 +300,6 @@ int RunTest(test_control_t *tc)
 
 		usleep(1000);
 		printf("main(%d,%d): Core Loaded\n", row, col);
-		PrintStuffOfInterest();
 
 		// Wait for core program execution to finish, then
 		// read test results from shared buffer.
@@ -302,7 +308,14 @@ int RunTest(test_control_t *tc)
 		// Keep the test alive
 		tc->keepalive++;
 
+		// if multiple mailbox accesses then slow the host side down
+		// to avoid read and write of the mailbox at the same time
+		// usleep(100000);
+		
 		ReadTestPatternsFromMemory(&emem, &dev, 0x0, 1);
+
+		// after all the mailbox activity from the epiphany side, read various registers
+		PrintStuffOfInterest();
 		
 		// Read the mailbox
 		int mbentries;
