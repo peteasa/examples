@@ -21,7 +21,8 @@ INCLUDES    	=
 LIB_PATHS   	= 
 LIBS        	= \
 	-le-hal \
-	-le-loader
+	-le-loader \
+	-lpthread
 
 # base location for release
 prefix ?= $(OECORE_NATIVE_SYSROOT)/usr
