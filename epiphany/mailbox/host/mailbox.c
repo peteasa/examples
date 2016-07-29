@@ -77,7 +77,7 @@ static e_platform_t platform;
 static e_epiphany_t dev;
 
 // Test control stuff
-#define SeqLen    8
+#define SeqLen    32
 typedef struct _TEST_CONTROL
 {
 	int cancelNow;  // TODO replace with a semaphore

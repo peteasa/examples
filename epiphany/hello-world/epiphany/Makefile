@@ -72,7 +72,7 @@ LDFLAGS		= -T $(EPIPHANY_HOME)/bsps/current/fast.ldf
 
 all : $(TARGET)
 
-clean :
+clean : uninstall
 	rm -f $(ELFS)
 
 $(TARGET) : $(TARGET_NAME)

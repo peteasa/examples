@@ -49,9 +49,10 @@ bindir ?= $(exec_prefix)/bin
 # https://gcc.gnu.org/onlinedocs/cpp/Preprocessor-Output.html
 # CFLAGS = -E -dD
 
+INCLUDES	= -I$(OECORE_TARGET_SYSROOT)/usr/include
 EXTRACFLAGS  	= 
 CXXFLAGS 	+= 
-CFLAGS 		+= $(LIB_PATHS) $(LIBS)
+CFLAGS 		+= $(LIB_PATHS) $(LIBS) $(INCLUDES)
 LDFLAGS		+=
 
 .PHONY : clean uninstall
@@ -64,7 +65,7 @@ $(TARGET) : $(TARGET_BASE)
 	install -d $(TARGET_LOCATION)
 	install -m 0755 $^ $@
 
-clean :
+clean : uninstall
 	rm -f $(TARGET_BASE)
 
 install : $(TARGET)
