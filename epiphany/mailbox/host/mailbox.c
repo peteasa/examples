@@ -44,85 +44,40 @@
 #include <fcntl.h>	// for O_RDWR
 #include <errno.h>	// for errno
 #include <e-hal.h>
-#include <linux/ioctl.h>
-#include <uapi/linux/epiphany.h> // for ioctl numbers
+#include <sys/ioctl.h>
+//#include <misc/epiphany.h> // needed for ioctl numbers
+#include "epiphany.h"
+
+struct e_message {
+	uint32_t from;
+	uint32_t data;
+} __attribute__((packed)) __attribute__((aligned(8)));
+
+#define EPIPHANY_DEV "/dev/epiphany/elink0"
 
 // Test message store
-#define _BufSize   (128)
-#define _BufOffset (0x01000000)
-static e_mem_t emem;
+const unsigned ShmSize = 128;
+const char ShmName[] = "hello_shm"; 
 
-// Mailbox defines
-// Should move to e-hal
-#define ELINK_MAILBOXLO	(0xF0730)
-#define ELINK_MAILBOXHI	(0xF0734)
-#define ELINK_MAILBOXSTAT (0xF0738)
-#define E_SYS_TXSTATUS	(0xF0214)
-#define E_SYS_RXSTATUS	(0xF0304)
-#define EPIPHANY_DEV "/dev/epiphany"
-#define MAILBOXSTATUSSIZE 10
+e_mem_t   mbuf;
 
-#ifdef EPIPHANY_IOC_MB_ENABLE
 typedef struct _MAILBOX_CONTROL
 {
 	int running;	// 1 if ready; otherwise not ready
 	int devfd;	// handle for epiphany device driver
 	int epollfd; 	// handle for blocking wait on notification
-	int kernelEventfd;	// handle for kernel notification
 	int cancelfd;	// handle for cancel
 	struct epoll_event *events;
-	mailbox_notifier_t mailbox_notifier;
 } mailbox_control_t;
 static mailbox_control_t mc;
-#endif
-
-static e_sys_rxcfg_t rxcfg         = { .reg = 0 };
-
-#define E_SYS_RXIDELAY0 (0xF0310)
-#define E_SYS_RXIDELAY1 (0xF0314)
-
-#define TAPS 64
-static int idelay[TAPS]={0x00000000,0x00000000,//0
-		  0x11111111,0x00000001,//1
-		  0x22222222,0x00000002,//2
-		  0x33333333,0x00000003,//3
-		  0x44444444,0x00000004,//4
-		  0x55555555,0x00000005,//5
-		  0x66666666,0x00000006,//6
-		  0x77777777,0x00000007,//7
-		  0x88888888,0x00000008,//8
-		  0x99999999,0x00000009,//9
-		  0xaaaaaaaa,0x0000000a,//10
-		  0xbbbbbbbb,0x0000000b,//11
-		  0xcccccccc,0x0000000c,//12
-		  0xdddddddd,0x0000000d,//13
-		  0xeeeeeeee,0x0000000e,//14
-		  0xffffffff,0x0000000f,//15
-		  0x00000000,0x00000010,//16
-		  0x11111111,0x00000011,//17
-		  0x22222222,0x00000012,//18
-		  0x33333333,0x00000013,//29
-		  0x44444444,0x00000014,//20
-		  0x55555555,0x00000015,//21
-		  0x66666666,0x00000016,//22
-		  0x77777777,0x00000017,//23
-		  0x88888888,0x00000018,//24
-		  0x99999999,0x00000019,//25
-		  0xaaaaaaaa,0x0000001a,//26
-		  0xbbbbbbbb,0x0000001b,//27
-		  0xcccccccc,0x0000001c,//28
-		  0xdddddddd,0x0000001d,//29
-		  0xeeeeeeee,0x0000001e,//30
-		  0xffffffff,0x0000001f};//31
 
 // Epiphany data
 static e_platform_t platform;
 
 static e_epiphany_t dev;
-static char emsg[_BufSize];
 
 // Test control stuff
-#define _SeqLen    (4)
+#define SeqLen    8
 typedef struct _TEST_CONTROL
 {
 	int cancelNow;  // TODO replace with a semaphore
@@ -141,14 +96,13 @@ int InitialTestMessageStore();
 void CloseTestMessageStore();
 int InitialMailboxNotifier();
 int OpenEpiphanyDevice();
-int OpenKernelEventMonitor();
+int UpdateEpoll(int fd, int operation, uint32_t waitOnEvent);
 int OpenCancelEventMonitor();
-void CloseMailboxNotifier();
-void CancelMailboxNotifier();
-int ArmMailboxNotifier();
+void CloseCancelEventMonitor();
+void CancelEventMonitor();
 int WaitForMailboxNotifier();
-void PrintStuffOfInterest();
-int setup_system(void);
+int e_mailbox_count();
+int e_mailbox_read(struct e_message *msg, int flags);
 
 int main(int argc, char *argv[])
 {
@@ -161,9 +115,8 @@ int main(int argc, char *argv[])
 	
 	if (0 == InitialTest())
 	{
-#ifdef EPIPHANY_IOC_MB_ENABLE
-		printf("main(): devfd %d, epollfd %d, kernelEventfd %d, cancelfd %d\n", mc.devfd, mc.epollfd, mc.kernelEventfd, mc.cancelfd);
-#endif		
+		printf("main(): devfd %d, epollfd %d, cancelfd %d\n", mc.devfd, mc.epollfd, mc.cancelfd);
+	
 		// Create a thread to monitor the progress of the test
 		threadRtn = pthread_create(&definedTestTimeThread, NULL, SleepThenCancel, (void *) &tc);
 
@@ -189,33 +142,17 @@ int main(int argc, char *argv[])
 int RunTest(test_control_t *tc)
 {
 	int returns;
-	unsigned row, col, coreid, i;
-
-	if (setup_system())
-	{
-		return -1;
-	}
-	rxcfg.reg = ee_read_esys(E_SYS_RXCFG);
-
-	// This should go into the epiphany initialization
-	int delayNo = 7;
-	if (sizeof(int) != ee_write_esys(E_SYS_RXIDELAY0, idelay[((delayNo+1)*2)-2]))
-	{
-		printf("INFO: setting idelay0 failed\n");
-	}
-
-	if (sizeof(int) != ee_write_esys(E_SYS_RXIDELAY1, idelay[((delayNo+1)*2)-1]))
-	{
-		printf("INFO: setting idelay1 failed\n");
-	}
-    
+	unsigned row, col, coreid, i, j;
+	struct e_message msg = { 0, 0 };
+ 
 	// Keep the test alive
 	tc->keepalive++;
 
 	row = 0;
 	col = 0;
-	for (i=0; i<_SeqLen; i++)
+	for (i=0; i<SeqLen; i++)
 	{
+		char emesg[ShmSize];
 		if (tc->cancelNow)
 		{
 			break;
@@ -237,32 +174,8 @@ int RunTest(test_control_t *tc)
 			}*/
 		}
 
-		// Configure epoll to listen for interrupt event
-		returns = ArmMailboxNotifier();
-		if (returns)
-		{
-			break;
-		}
-
-		// Enable the mailbox interrupt
-		// set: static remap, remap mask 0xf00, pattern 0x300 0x300f004
-		//rxcfg.reg = rxcfg.reg | (0x1 << 28);
-		//if (sizeof(int) != ee_write_esys(E_SYS_RXCFG, rxcfg.reg))
-		//{
-		//	printf("RunTest(): Failed set rxcfg register\n");
-		//}
-
-		// Enable the mailbox interrupt
-		if ( -1 == ioctl(mc.devfd, EPIPHANY_IOC_MB_ENABLE) )
-		{
-			printf("RunTest(): Failed to enable mailbox "
-			  "Error is %s\n", strerror(errno));
-		}
-		usleep(1000);
-
 		// Calculate the coreid
 		coreid = (row + platform.row) * 64 + col + platform.col;
-		printf("RunTest(): %3d: Message from eCore 0x%03x (%2d,%2d): ", i, coreid, row, col);
 
 		// Open the single-core workgroup and reset the core, in
 		// case a previous process is running. Note that we used
@@ -270,50 +183,61 @@ int RunTest(test_control_t *tc)
 		e_open(&dev, row, col, 1, 1);
 		e_reset_group(&dev);
 
+		// printf("RunTest(%d,%d): Load Core\n", row, col);
+		
 		// Load the device program onto the selected eCore
-		// and launch after loading.
-		printf("main(%d,%d): Load core\n", row, col);
-		printf("RunTest(): %3d: Message from eCore 0x%03x (%2d,%2d): ", i, coreid, row, col);
+		// e_load_group core 0,0 group size 1,1 and wait
 		e_return_stat_t result;
-		result = e_load("/usr/epiphany/bin/e_mailbox.srec", &dev, 0, 0, E_TRUE);
+		result = e_load_group("e_mailbox.elf", &dev, 0, 0, 1, 1, E_FALSE);
 		if (result != E_OK)
 		{
-			printf("RunTest(): Error in e_load %i\n", result);
+			printf("RunTest(%d,%d): Error in e_load %i\n", row, col, result);
 		}
+
+		// printf("RunTest(%d,%d): Core loaded\n", row, col);
 
 		// Keep the test alive
 		tc->keepalive++;
 
-		usleep(1000);
-		printf("main(%d,%d): Core Loaded\n", row, col);
-		PrintStuffOfInterest();
+		// e_start group core 0,0
+		e_start(&dev, 0, 0);
+		usleep(10000);
 
 		// Wait for core program execution to finish, then
 		// read message from shared buffer.
-		returns = WaitForMailboxNotifier();
+		// returns = WaitForMailboxNotifier();
+		// Blocking wait for Epiphany core to send mailbox
+		e_mailbox_read(&msg, 0);
 
 		// Keep the test alive
 		tc->keepalive++;
-	
-		e_read(&emem, 0, 0, 0x0, emsg, _BufSize);
 
-		// Print the message and close the workgroup.
-		printf("\"%s\"\n", emsg);
+		// Read the core message
+		e_read(&mbuf, 0, 0, 0x0, emesg, ShmSize);
 
+		// Print the message
+		printf("RunTest(): %3d: Message from eCore 0x%03x (%2d,%2d): ", i, coreid, row, col);
+		printf("\"%s\"\n", emesg);
+
+		unsigned count;
+		count = e_mailbox_count() + 1;
+		
+		// Print mailbox message
+		printf("%d messages from: 0x%08x data: 0x%08x\n", count--,
+		       msg.from, msg.data);
+ 
 		// Read the mailbox
-		int mbentries;
-		for (mbentries = 0; mbentries < _SeqLen; mbentries++)
+		unsigned mbentries = 1;
+		while (0 < count)
 		{
-			int pre_stat    = ee_read_esys(ELINK_MAILBOXSTAT);
-			int mbox_lo     = ee_read_esys(ELINK_MAILBOXLO);
-			int mbox_hi     = ee_read_esys(ELINK_MAILBOXHI);
-			int post_stat   = ee_read_esys(ELINK_MAILBOXSTAT);
-			printf ("RunTest(): PRE_STAT=%08x POST_STAT=%08x LO=%08x HI=%08x\n", pre_stat, post_stat, mbox_lo, mbox_hi);
-
-			if (0 == post_stat)
-			{
+			if (e_mailbox_read(&msg, 0)) {
+				printf("ERROR: e_mailbox_read\n");
 				break;
 			}
+
+			printf("message %d from: 0x%08x data: 0x%08x\n", mbentries++,
+			       msg.from, msg.data);
+			count = e_mailbox_count();
 		}
 
 		e_close(&dev);
@@ -322,16 +246,6 @@ int RunTest(test_control_t *tc)
 	}
 	
 	return 0;
-}
-
-void PrintStuffOfInterest()
-{
-	// Print stuff of interest
-	int etx_status = ee_read_esys(E_SYS_TXSTATUS);
-	int etx_config = ee_read_esys(E_SYS_TXCFG);
-	int erx_status = ee_read_esys(E_SYS_RXSTATUS);
-	int erx_config = ee_read_esys(E_SYS_RXCFG);
-	printf("RunTest(): etx_status: 0x%x, etx_config: 0x%x, erx_status: 0x%x, erx_config: 0x%x\n", etx_status, etx_config, erx_status, erx_config);
 }
 
 void *SleepThenCancel( void *ptr )
@@ -360,7 +274,7 @@ void *SleepThenCancel( void *ptr )
 	}
 
 	tc->cancelNow = 1;
-	CancelMailboxNotifier();
+	CancelEventMonitor();
 }
 
 int InitialTest()
@@ -400,7 +314,6 @@ int InitialTest()
 
 void CloseTest()
 {
-	CloseMailboxNotifier();
 	CloseTestMessageStore();
 	CloseEpiphany();
 }
@@ -442,19 +355,26 @@ void CloseEpiphany()
 
 int InitialTestMessageStore()
 {
+	int rc;
+
 	// Allocate a buffer in shared external memory
 	// for message passing from eCore to host.
-	return e_alloc(&emem, _BufOffset, _BufSize);
+	rc = e_shm_alloc(&mbuf, ShmName, ShmSize);
+	if (rc != E_OK)
+	{
+		rc = e_shm_attach(&mbuf, ShmName);
+	}
+
+	return rc;
 }
 
 void CloseTestMessageStore()
 {
-	e_free(&emem);
+	e_shm_release(ShmName);
 }
 
 int InitialMailboxNotifier()
 {
-#ifdef EPIPHANY_IOC_MB_ENABLE
 	int returns;
 	
 	mc.running = 0;
@@ -474,40 +394,24 @@ int InitialMailboxNotifier()
 		return returns;
 	}
 
-	returns = OpenKernelEventMonitor();
-	if (returns)
-	{
-		printf("InitialMailboxNotifier(): mailbox sysfs monitor open failure.");
-		// Tidy up
-		close(mc.devfd);
-		close(mc.epollfd);
-		return returns;
-	}
-
 	returns = OpenCancelEventMonitor();
 	if (returns)
 	{
 		printf("InitialMailboxNotifier(): cancel event monitor open failure.");
 		// Tidy up
-		struct epoll_event event;
-		epoll_ctl (mc.epollfd, EPOLL_CTL_DEL, mc.kernelEventfd, &event);
-		close(mc.kernelEventfd);
 		close(mc.devfd);
 		close(mc.epollfd);
 		return returns;
 	}	
 
 	// Now allocate the event list
+	// Max Events (mc.events size): Cancel or Mailbox (maxevents = 2)
 	mc.events = calloc(2, sizeof(struct epoll_event));
 	if (NULL == mc.events)
 	{
 		printf("InitialMailboxNotifier(): malloc of event memory failure.");
 		// Tidy up
-		struct epoll_event event;
-		epoll_ctl (mc.epollfd, EPOLL_CTL_DEL, mc.cancelfd, &event);
-		epoll_ctl (mc.epollfd, EPOLL_CTL_DEL, mc.kernelEventfd, &event);
-		close(mc.cancelfd);
-		close(mc.kernelEventfd);
+		CloseCancelEventMonitor();
 		close(mc.devfd);
 		close(mc.epollfd);
 		return returns;
@@ -515,108 +419,23 @@ int InitialMailboxNotifier()
 
 	mc.running = 1;
 	return returns;
-#endif
-	return 0;
 }
 
 int OpenEpiphanyDevice()
 {
 	// Now open the epiphany device for mailbox interrupt control
-	mc.devfd = open(EPIPHANY_DEV, O_RDWR | O_SYNC);
-	// printf ("OpenEpiphanyDevice(): mc.devfd %d\n", mc.devfd);
-	if ( -1 == mc.devfd )
-	{
-		int rtn = errno;
-		printf ("InitialMaiboxNotifier(): epiphany device open failed! %s errno %d\n", strerror(rtn), rtn);
-
-		return E_ERR;
-	}
-
-	return 0;
-}
-
-int OpenKernelEventMonitor()
-{
-#ifdef EPIPHANY_IOC_MB_ENABLE
-	int returns;
-	char notifier[8];
-	int notifierfd;
-	int oldNotifier;
-
-	// Open the kernel Event Notifier
-	mc.kernelEventfd = eventfd(0, EFD_NONBLOCK);
-	if ( -1 == mc.kernelEventfd )
-	{
-		int rtn = errno;
-		printf ("InitialMailboxNotifier(): Kernel Event Notifier open failure! %s errno: %d\n", strerror(rtn), rtn);
-
-		return E_ERR;
-	}
-
-	// Add the kernelEventfd handle to epoll
-	returns = ModifyNotifier(mc.kernelEventfd, EPOLL_CTL_ADD);
-	if (returns)
-	{
-		int rtn = errno;
-		printf ("InitialMailboxNotifier(): EPOLL_CTL_ADD kernelEventfd failed! %s errno: %d kernelEventfd: %d\n", strerror(rtn), rtn, mc.kernelEventfd);
-
-		// Tidy up
-		close(mc.kernelEventfd);
-		return rtn;
-	}
-
-	// Starting from scratch with no other application running
-	// read the current kernel mailbox_notifier fd handle
-	// If the current kernel mailbox_notifier fd handle is -1 there is no
-	// other application using the mailbox.
-	notifierfd = open(MAILBOX_NOTIFIER, O_RDONLY);
-	oldNotifier = -1;
-	if (0 < notifierfd)
-	{
-		int rtn = read(notifierfd, notifier, 8);
-
-		// printf ("InitialMailboxNotifier(): returns: %d, Old notifier fd: %s\n", rtn, notifier);
-		if (rtn)
-		{
-			sscanf(notifier, "%d", &oldNotifier);
-		}
-
-		close(notifierfd);
-	}
+	//mc.devfd = open(EPIPHANY_DEV, O_NONBLOCK | O_RDONLY;
+	mc.devfd = open(EPIPHANY_DEV, O_RDONLY);
 	
-	// Starting from scratch ignore other applications and override them
-	// by passing the old kernel mailbox_notifier fd handle to the driver
-	// and replace this with the new fd
-	mc.mailbox_notifier.old_notifier = oldNotifier;
-	mc.mailbox_notifier.new_notifier = mc.kernelEventfd;
-	if ( -1 == ioctl(mc.devfd, EPIPHANY_IOC_MB_NOTIFIER, &mc.mailbox_notifier) )
+	// printf ("OpenEpiphanyDevice(): mc.devfd %d\n", mc.devfd);
+	if ( mc.devfd < 0 )
 	{
 		int rtn = errno;
-		printf("InitialMailboxNotifier(): Failed to send notifier to driver. %s errno: %d kernelEventfd: %d\n", strerror(rtn), rtn, mc.kernelEventfd);
+		printf("InitialMaiboxNotifier(): epiphany device open failed! %s errno %d\n", strerror(rtn), rtn);
 
-		// Tidy up
-		struct epoll_event event;
-		epoll_ctl (mc.epollfd, EPOLL_CTL_DEL, mc.kernelEventfd, &event);
-		close(mc.kernelEventfd);
-		mc.kernelEventfd = -1;
-		return rtn;
+		return E_ERR;
 	}
 
-	return returns;
-#endif
-	return 0;
-}
-
-int ArmMailboxNotifier()
-{
-#ifdef EPIPHANY_IOC_MB_ENABLE
-	if (mc.running)
-	{
-		return ModifyNotifier(mc.kernelEventfd, EPOLL_CTL_MOD);
-	}
-
-	return E_ERR;
-#endif
 	return 0;
 }
 
@@ -627,36 +446,34 @@ int ModifyNotifier(int fd, int operation)
 
 int UpdateEpoll(int fd, int operation, uint32_t waitOnEvent)
 {
-#ifdef EPIPHANY_IOC_MB_ENABLE
 	int returns;
 	struct epoll_event event;
 	
 	returns = E_ERR;
 	
-	// Add the kernelEventfd handle to epoll
+	// Add the handle to epoll
 	event.data.fd = fd;
 	event.events = waitOnEvent;
 	returns = epoll_ctl (mc.epollfd, operation, fd, &event);
 	if (returns)
 	{
 		returns = errno;
-		printf ("InitialMailboxNotifier(): epoll_ctl failed! %s errno: %d operation: %d, event: %d, fd: %d\n", strerror(returns), returns, operation, waitOnEvent, fd);
+		printf("InitialMailboxNotifier(): epoll_ctl failed! %s errno: %d operation: %d, event: %d, fd: %d\n", strerror(returns), returns, operation, waitOnEvent, fd);
 	}
 
 	return returns;
-#endif
-	return 0;
 }
 
 int WaitForMailboxNotifier()
 {
-#ifdef EPIPHANY_IOC_MB_ENABLE
 	int numberOfEvents;
-	size_t bytesRead;
-	int64_t eventfdCount;
+	ssize_t size = 0;
+	int messages = 0;
 
+	// Max Events (mc.events size): Cancel or Mailbox (maxevents = 2)
+	// Wait forever (timeout = -1)
 	numberOfEvents = epoll_wait(mc.epollfd, mc.events, 2, -1);
-	if ((1 < numberOfEvents) || (mc.events[0].data.fd != mc.kernelEventfd))
+	if ((1 < numberOfEvents) || (mc.events[0].data.fd != mc.devfd))
 	{
 		printf("INFO: WaitForMailboxNotifier(): Cancelled!\n");
 	}
@@ -666,29 +483,19 @@ int WaitForMailboxNotifier()
 		int epollerrno = errno;
 		printf("WaitForMailboxNotifier(): epoll_wait failed! %s errno %d\n", strerror(epollerrno), epollerrno);
 	}
-
-	bytesRead = read(mc.kernelEventfd, &eventfdCount, sizeof(int64_t));
-	if (0 > bytesRead)
+	else
 	{
-		// failure to reset the eventfd counter to zero
-		// can cause lockups!
-		int eventfderrno = errno;
-		printf("ERROR: WaitForMailboxNotifier(): lockup likely: eventfd counter reset failed! %s errno %d\n", strerror(eventfderrno), eventfderrno);
+		// TODO when mailbox supports epoll
+		// App cancel but mailbox may still need to be
+		// read then perhaps ephiphany reset to stop
+		// further mailbox messages?
 	}
 	
-	// printf("WaitForMailboxNotifier(): bytesRead: %d, eventfdCount: %d\n", bytesRead, eventfdCount);
-
-	return numberOfEvents;
-#else
-	// do the best we can and wait
-	usleep(100000);
-	return 0;
-#endif	
+	return messages;
 }
 
 int OpenCancelEventMonitor()
 {
-#ifdef EPIPHANY_IOC_MB_ENABLE
 	int returns;
 
 	// Create a descriptor to cancel epoll wait
@@ -696,7 +503,7 @@ int OpenCancelEventMonitor()
 	if ( -1 == mc.cancelfd )
 	{
 		int rtn = errno;
-		printf ("InitialMailboxNotifier(): open eventfd failure! %s errno: %d\n", strerror(rtn), rtn);
+		printf("InitialMailboxNotifier(): open eventfd failure! %s errno: %d\n", strerror(rtn), rtn);
 		
 		return E_ERR;
 	}
@@ -706,7 +513,7 @@ int OpenCancelEventMonitor()
 	if (returns)
 	{
 		int rtn = errno;
-		printf ("InitialMailboxNotifier(): EPOLL_CTL_ADD cancelfd failed! %s errno: %d cancelfd: %d\n", strerror(rtn), rtn, mc.cancelfd);
+		printf("InitialMailboxNotifier(): EPOLL_CTL_ADD cancelfd failed! %s errno: %d cancelfd: %d\n", strerror(rtn), rtn, mc.cancelfd);
 
 		// Tidy up
 		close(mc.cancelfd);
@@ -714,145 +521,58 @@ int OpenCancelEventMonitor()
 	}
 
 	return returns;
-#endif
-	return 0;
 }
 
-void CloseMailboxNotifier()
+void CloseCancelEventMonitor()
 {
-#ifdef EPIPHANY_IOC_MB_ENABLE
-	//printf ("INFO: MailboxNotifier Closing\n");
-	if (mc.running)
-	{
-		CancelMailboxNotifier();
-
-		if (0 < mc.kernelEventfd)
-		{
-			mc.mailbox_notifier.old_notifier = mc.kernelEventfd;
-			mc.mailbox_notifier.new_notifier = -1;
-			ioctl(mc.devfd, EPIPHANY_IOC_MB_NOTIFIER, &mc.mailbox_notifier);
-		}
-		
-		struct epoll_event event;
-		epoll_ctl (mc.epollfd, EPOLL_CTL_DEL, mc.kernelEventfd, &event);
-		epoll_ctl (mc.epollfd, EPOLL_CTL_DEL, mc.cancelfd, &event);
-		free((void *)mc.events);
-		close(mc.cancelfd);
-		close(mc.kernelEventfd);
-		mc.kernelEventfd = -1;
-		close(mc.devfd);
-		close(mc.epollfd);
-	}
-#endif
+	ModifyNotifier(mc.cancelfd, EPOLL_CTL_DEL);
+	close(mc.cancelfd);
 }
 
-void CancelMailboxNotifier()
+void CancelEventMonitor()
 {
-#ifdef EPIPHANY_IOC_MB_ENABLE
 	int64_t cancel = 1;
 	if (sizeof(int64_t) != write(mc.cancelfd, &cancel, sizeof(int64_t)))
 	{
-		printf ("CancelMailboxNotifier(): Cancelled failed!\n");
+		printf("CancelEventMonitor(): Cancelled failed!\n");
 	}
-#endif
 }
 
-int setup_system(void)
+int e_mailbox_read(struct e_message *msg, int flags)
 {
-	int rc = 0;
-	uint32_t divider;
-	uint32_t chipid;
-	e_sys_txcfg_t txcfg         = { .reg = 0 };
-	e_sys_rx_dmacfg_t rx_dmacfg = { .reg = 0 };
-	e_sys_clkcfg_t clkcfg       = { .reg = 0 };
-	e_sys_reset_t resetcfg      = { .reg = 0 };
-	e_epiphany_t dev;
+	int rc;
+	struct e_mailbox_msg kernel_msg;
 
-#if 1 // ???
-	chipid = 0x808 /* >> 2 */;
-	if (sizeof(int) != ee_write_esys(E_SYS_CHIPID, chipid /* << 2 */))
-		goto err;
-	usleep(1000);
-#endif
-
-#if 1
-	txcfg.enable = 1;
-	txcfg.mmu_enable = 0;
-	if (sizeof(int) != ee_write_esys(E_SYS_TXCFG, txcfg.reg))
-		goto err;
-	usleep(1000);
-#endif
-
-	rxcfg.testmode = 0; /* bug/(feature?) workaround */
-	rxcfg.mmu_enable = 0;
-
-	// I have no idea how this works!  mailbox data addressed to 810 -> 310??
-	rxcfg.remap_cfg = 1; // "static" remap_addr
-	rxcfg.remap_mask = 0xf00;
-	rxcfg.remap_base = 0x300;//turn 8 into 3
-	// But changing to this has no effect!
-	//rxcfg.remap_mask = 0xff0;
-	//rxcfg.remap_base = 0x810;//route all to 810
-	if (sizeof(int) != ee_write_esys(E_SYS_RXCFG, rxcfg.reg))
-		goto err;
-	usleep(1000);
-
-#if 0 // ?
-	rx_dmacfg.enable = 1;
-	if (sizeof(int) != ee_write_esys(E_SYS_RXDMACFG, rx_dmacfg.reg))
-		goto err;
-	usleep(1000);
-#endif
-
-	int delayNo = 7;
-	if (sizeof(int) != ee_write_esys(E_SYS_RXIDELAY0, idelay[((delayNo+1)*2)-2]))
+	rc = ioctl(mc.devfd, E_IOCTL_MAILBOX_READ, &kernel_msg);
+	if (rc < 0)
 	{
-		printf("ERROR: setting idelay0 failed\n");
-		goto err;
+		printf("e_mailbox_read(): ioctl failed! %s errno %d\n", strerror(rc), rc);
+		return rc;
 	}
 
-	if (sizeof(int) != ee_write_esys(E_SYS_RXIDELAY1, idelay[((delayNo+1)*2)-1]))
+#if 0
+	msg->from = kernel_msg.from;
+	msg->data = kernel_msg.data;
+#else
+	/* work around FPGA Elink 64-bit burst bug
+	 * Message can only be 32-bits for now so use lower bits for data
+	 * and let sender be 0 */
+	msg->from = 0;
+	msg->data = kernel_msg.from;
+#endif
+
+	return 0;
+}
+
+int e_mailbox_count()
+{
+	int rc;
+
+	rc = ioctl(mc.devfd, E_IOCTL_MAILBOX_COUNT);
+	if (rc < 0)
 	{
-		printf("ERROR: setting idelay1 failed\n");
-		goto err;
+		printf("e_mailbox_count(): ioctl failed! %s errno %d\n", strerror(rc), rc);
 	}
 
-	rc = E_ERR;
-	
-	if ( E_OK != e_open(&dev, 2, 3, 1, 1) ) {
-	  warnx("e_reset_system(): e_open() failure.");
-	  goto err;
-	}
-	
-	txcfg.ctrlmode = 0x5; /* Force east */
-	txcfg.ctrlmode_select = 0x1; /* */
-	usleep(1000);
-	if (sizeof(int) != ee_write_esys(E_SYS_TXCFG, txcfg.reg))
-	  goto cleanup_platform;
-	
-	//divider = 1; /* Divide by 4, see data sheet */
-	divider = 0; /* Divide by 2, see data sheet */
-	usleep(1000);
-	if (sizeof(int) != e_write(&dev, 0, 0, E_REG_LINKCFG, &divider, sizeof(int)))
-	  goto cleanup_platform;
-	
-	txcfg.ctrlmode = 0x0;
-	txcfg.ctrlmode_select = 0x0; /* */
-	usleep(1000);
-	if (sizeof(int) != ee_write_esys(E_SYS_TXCFG, txcfg.reg))
-	  goto cleanup_platform;
-
-	rc = E_OK;
-	
-cleanup_platform:
-	if (E_OK != rc) printf("e_reset_system(): fails\n");
-	e_close(&dev);
-	
-	usleep(1000);
 	return rc;
-
-err:
-	warnx("e_reset_system(): Failed\n");
-	usleep(1000);
-	return E_ERR;
 }

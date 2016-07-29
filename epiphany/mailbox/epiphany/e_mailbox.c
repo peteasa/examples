@@ -31,36 +31,76 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "e_lib.h"
+#include <e-lib.h>
 
-#define ELINK_BASE	0x81000000
-#define E_MAILBOXLO	0xF0730
+struct e_message {
+	uint32_t from;
+	uint32_t data;
+} __attribute__((packed)) __attribute__((aligned(8)));
 
-#define USE_DMA 1
-#ifdef USE_DMA
-#define e_memcopy(dst, src, size) e_dma_copy(dst, src, size)
-#else
-#define e_memcopy(dst, src, size) memcpy(dst, src, size)
-#endif
+#define FOO_ADDR 0x8e000000
+#define MAILBOX_ADDR 0x810F0730
+/* TODO: Move to e-lib */
+void e_send_message(uint32_t data)
+{
+	volatile struct e_message *mailbox = (struct e_message *) MAILBOX_ADDR;
+	struct e_message msg;
+	int i;
 
-char outbuf[128] SECTION("shared_dram");
+	msg.from = e_get_coreid();
+	msg.data = data;
+	msg.from = data;
 
-int main(void) {
+	/* FIXME: 64-bit burst writes to same address is broken in FPGA elink.
+	 * For now resort to 32-bit messages */
+	__asm__ __volatile__ (
+		"str %[msg],[%[mailbox]]"
+		:
+		: [msg] "r" (msg), [mailbox] "r" (mailbox)
+		: "memory");
+}
+
+int main(void) 
+{
+	const char	ShmName[] = "hello_shm"; 
+	const char      Msg[] = "Hello World from core 0x%03x!";
+	char            buf[256] = { 0 };
 	e_coreid_t coreid;
-
+	e_memseg_t   	emem;
+	unsigned        my_row;
+	unsigned        my_col;
+	
 	// Who am I? Query the CoreID from hardware.
 	coreid = e_get_coreid();
+	e_coords_from_coreid(coreid, &my_row, &my_col);
+
+	if ( E_OK != e_shm_attach(&emem, ShmName) ) {
+		return EXIT_FAILURE;
+	}
 	
 	// The PRINTF family of functions do not fit
 	// in the internal memory, so we link against
 	// the FAST.LDF linker script, where these
 	// functions are placed in external memory.
-	sprintf(outbuf, "Hello World from core 0x%03x!", coreid);
+	// Attach to the shm segment
+	snprintf(buf, sizeof(buf), Msg, coreid);
 	
+	if ( emem.size >= strlen(buf) + 1 ) {
+		// Write the message (including the null terminating
+		// character) to shared memory
+		e_write((void*)&emem, buf, my_row, my_col, NULL, strlen(buf) + 1);
+	} else {
+		// Shared memory region is too small for the message
+		return EXIT_FAILURE;
+	}
+
+	/* Create delay so host app have to wait */
+	int i;
+	for (i = 0; i < 10000000; i++)
+		__asm__ __volatile__ ("nop" ::: "memory");
+		
 	// Write coreid to the mailbox
-	e_coreid_t * dst;
-	dst = (e_coreid_t *)(ELINK_BASE + E_MAILBOXLO);
-	e_memcopy(dst, &coreid, sizeof(e_coreid_t));
+	e_send_message(coreid);
 
 	return EXIT_SUCCESS;
 }
