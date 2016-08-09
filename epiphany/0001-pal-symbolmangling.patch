@@ -1,0 +1,92 @@
+diff --git a/benchmark/runbench.epiphany.c b/benchmark/runbench.epiphany.c
+index 3d51557..c2a9731 100644
+--- a/benchmark/runbench.epiphany.c
++++ b/benchmark/runbench.epiphany.c
+@@ -55,7 +55,7 @@ int main(int argc, char **argv)
+     p_write(&status_mem, &status, 0, sizeof(status), 0);
+     p_write(&results_mem, clear, 0, sizeof(clear), 0);
+ 
+-    err = p_run(prog, "main", team, 0, 1, 0, NULL, 0);
++    err = p_run(prog, "_main", team, 0, 1, 0, NULL, 0);
+ 
+     /* Read back */
+     p_read(&status_mem, &status, 0, sizeof(status), 0);
+diff --git a/examples/base/simple_example.c b/examples/base/simple_example.c
+index b0eb236..e1a1d5c 100644
+--- a/examples/base/simple_example.c
++++ b/examples/base/simple_example.c
+@@ -8,7 +8,7 @@ int main(int argc, char *argv[])
+ 
+     // Stack variables
+     const char *file = "./hello_task.elf";
+-    const char *func = "main";
++    const char *func = "_main";
+     int status, i, all, nargs = 1;
+     p_arg_t args[nargs];
+     char argbuf[20];
+diff --git a/examples/base/sine_example.c b/examples/base/sine_example.c
+index 5464024..d152c2e 100644
+--- a/examples/base/sine_example.c
++++ b/examples/base/sine_example.c
+@@ -12,7 +12,7 @@ int main(int argc, char **argv)
+     // Stack variables
+     int type = 3; // 1=EP,2=GRID,3=SMP
+     char *elf = "./sine_task.elf";
+-    char *func = "main";
++    const char *func = "_main";
+     int status, myid, i, all;
+ 
+     // Pointers to dynamic objects
+diff --git a/examples/image/filters2-host.c b/examples/image/filters2-host.c
+index 55abc63..b76f0b0 100644
+--- a/examples/image/filters2-host.c
++++ b/examples/image/filters2-host.c
+@@ -88,7 +88,7 @@ int main(int argc, char *argv[])
+     };
+ 
+     // Run program
+-    err = p_run(prog, "gauss3x3", team, 0, 1, ARRAY_SIZE(args), args, 0);
++    err = p_run(prog, "_gauss3x3", team, 0, 1, ARRAY_SIZE(args), args, 0);
+ 
+     // Read back result. TODO: Use PAL API.
+     p_read(&out, data, 0, size * sizeof(float), 0);
+diff --git a/examples/math/matmul/matmul-host.c b/examples/math/matmul/matmul-host.c
+index defbf34..7d8a4da 100644
+--- a/examples/math/matmul/matmul-host.c
++++ b/examples/math/matmul/matmul-host.c
+@@ -199,7 +199,8 @@ int main(int argc, char *argv[])
+ 	}
+ 
+ 	p_arg_t args[] = { &nside, sizeof(nside), true };
+-	if (p_run(prog, "matmul", team, 0, p_team_size(team), 1, args, 0)) {
++
++	if (p_run(prog, "_matmul", team, 0, p_team_size(team), 1, args, 0)) {
+ 		fprintf(stderr, "Error loading Epiphany program.\n");
+ 		exit(1);
+ 	}
+diff --git a/src/base/devices/posix/epiphany/loader.c b/src/base/devices/posix/epiphany/loader.c
+index 3e660fa..678a51d 100644
+--- a/src/base/devices/posix/epiphany/loader.c
++++ b/src/base/devices/posix/epiphany/loader.c
+@@ -738,7 +738,7 @@ static int set_core_config(struct team *team, unsigned coreid, unsigned rank,
+     struct symbol_info symbols[] = {
+         { .name = function     },
+         { .name = function_plt },
+-        { .name = "__pal_epiphany_coords" },
++        { .name = "___pal_epiphany_coords" },
+     };
+     lookup_symbols(file, file_size, symbols, ARRAY_SIZE(symbols));
+ 
+diff --git a/tests/runtest.epiphany.c b/tests/runtest.epiphany.c
+index ef0caa7..7458e37 100644
+--- a/tests/runtest.epiphany.c
++++ b/tests/runtest.epiphany.c
+@@ -44,7 +44,7 @@ int main(int argc, char **argv)
+     p_write(&status_mem, &status, 0, sizeof(status), 0);
+     p_write(&results_mem, results, 0, sizeof(results), 0);
+ 
+-    err = p_run(prog, "main", team, 0, 1, 0, NULL, 0);
++    err = p_run(prog, "_main", team, 0, 1, 0, NULL, 0);
+ 
+     /* Read back */
+     p_read(&status_mem, &status, 0, sizeof(status), 0);
