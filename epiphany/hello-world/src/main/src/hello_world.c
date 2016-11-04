@@ -108,8 +108,8 @@ int main(int argc, char *argv[])
 		// Load the device program onto the selected eCore
 		// and launch after loading.
 		// BUG: /usr/epiphany/bin/e_hello_world.elf full path appears not to work
-		if ( E_OK != e_load("e_hello_world.elf", &dev, 0, 0, E_TRUE) ) {
-			fprintf(stderr, "Failed to load e_hello_world.elf\n");
+		if ( E_OK != e_load("e_hello_world", &dev, 0, 0, E_TRUE) ) {
+			fprintf(stderr, "Failed to load e_hello_world\n");
 			return EXIT_FAILURE;
 		}
 
