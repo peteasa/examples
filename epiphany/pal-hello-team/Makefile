@@ -1,7 +1,7 @@
 
 
 DIRS =	epiphany \
-		host
+	host
 
 .PHONY: all $(DIRS)
 .PHONY: clean $(DIRS)

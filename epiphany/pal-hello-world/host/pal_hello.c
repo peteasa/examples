@@ -18,7 +18,7 @@ int main(int argc, char **argv)
 
     // Stack variables
     const char *file = "hello_task.elf";
-    const char *func = "_main";
+    const char *func = "main";
     int type = P_DEV_EPIPHANY;
     int i, all, myid, err;
     ssize_t size;

@@ -1,6 +1,6 @@
 
 
-DIRS =	epiphany	\
+DIRS =	epiphany \
 	host
 
 .PHONY: all $(DIRS)

@@ -19,7 +19,7 @@ int main(int argc, char **argv)
 
     // Stack variables
     const char *file = "team_task.elf";
-    const char *func = "_main";
+    const char *func = "main";
     int type = P_DEV_EPIPHANY;
     int i, all, myid, err;
     ssize_t size;
@@ -63,7 +63,8 @@ int main(int argc, char **argv)
     size = p_write(&results_mem, clear, 0, sizeof(clear), 0);
     printf("main(): sizeof(clear): %p, size written: %p\n", sizeof(clear), size);
 
-    err = p_run(prog0, func, team0, 0, NUMBEROFCORES, nargs, args, 0);
+    // for now dont use arguments - nargs, args
+    err = p_run(prog0, func, team0, 0, NUMBEROFCORES, 0, NULL, 0);
     printf("main(): p_run returned: %d\n", err);
 
     p_wait(team0);
