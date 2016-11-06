@@ -23,13 +23,12 @@ LIBS        	= -le-lib
 
 # Build the names of the elf files
 ELFS		= $(SRCS:.c=.elf)
-SREC		= $(TARGET_BASE).srec
 
 # base location for release
 prefix ?= $(OECORE_NATIVE_SYSROOT)/usr
 
 # location of the final target
-TARGET_NAME 	= $(TARGET_BASE).srec
+TARGET_NAME 	= $(TARGET_BASE).elf
 TARGET_LOCATION = $(prefix)/epiphany/bin
 TARGET 		= $(TARGET_LOCATION)/$(TARGET_NAME)
 
@@ -71,20 +70,14 @@ LDFLAGS		= -T $(EPIPHANY_HOME)/bsps/current/fast.ldf
 %.elf: %.c
 	$(CC) $(LDFLAGS) $< -o $@ ${CFLAGS}
 
-%.srec: %.elf
-	$(OBJCPY) --srec-forceS3 --output-target srec $< $@ 
-
 all : $(TARGET)
 
 $(ELFS) : $(SRCS)
-
-$(SREC) : $(ELFS)
 
 $(TARGET_NAME) : $(ELFS)
 
 clean :
 	rm -f $(ELFS)
-	rm -f $(SREC)
 
 $(TARGET) : $(TARGET_NAME)
 	install -d $(TARGET_LOCATION)

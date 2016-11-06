@@ -39,9 +39,9 @@ volatile int dma0int, dma1int SECTION(".data_bank3");
 unsigned row0, col0, row1, col1 SECTION(".data_bank3");
 unsigned dest SECTION(".data_bank2");
 
-void user_isr(int);
-void dma0_isr(int);
-void dma1_isr(int);
+void user_isr();
+void dma0_isr();
+void dma1_isr();
 
 int main(void) {
 	CPUActive = 0;
@@ -191,13 +191,13 @@ int main(void) {
 	return EXIT_SUCCESS;
 }
 
-void __attribute__((interrupt)) user_isr(int signum)
+void __attribute__((interrupt)) user_isr()
 {
 	// Enable the interrupt
 	e_irq_mask(E_USER_INT, E_FALSE);
 }
 
-void __attribute__((interrupt)) dma0_isr(int signum)
+void __attribute__((interrupt)) dma0_isr()
 {
 	// When the dma transfer finished tell the neighbour
 	dma0int = 1;
@@ -207,7 +207,7 @@ void __attribute__((interrupt)) dma0_isr(int signum)
 	e_irq_mask(E_DMA0_INT, E_FALSE);
 }
 
-void __attribute__((interrupt)) dma1_isr(int signum)
+void __attribute__((interrupt)) dma1_isr()
 {
 	// When the dma transfer finished tell the neighbour
 	dma1int = 1;

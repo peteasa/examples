@@ -31,6 +31,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <e-loader.h>
 #include <e-hal.h>
 
 #define destAddress (0x4000)	// Bank2 base address
@@ -90,7 +91,7 @@ int main(int argc, char *argv[])
 
 		// Load the device program onto the selected eCore
 		e_return_stat_t result;
-		result = e_load("/usr/epiphany/bin/e_dma.srec", &dev, row, col, E_FALSE);
+		result = e_load("/usr/epiphany/bin/e_dma.elf", &dev, row, col, E_FALSE);
 		if (result != E_OK)
 		{
 			fprintf(stderr, "main: 0x%03x Error in e_load %i\n", coreid, result);
