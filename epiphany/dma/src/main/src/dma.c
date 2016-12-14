@@ -1,52 +1,53 @@
-/*
-  hello_world.c
-
-  Copyright (C) 2012 Adapteva, Inc.
-  Contributed by Yaniv Sapir <yaniv@adapteva.com>
-
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
-
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with this program, see the file COPYING.  If not, see
-  <http://www.gnu.org/licenses/>.
-*/
-
-// This is the HOST side of the Hello World example.
-// The program initializes the Epiphany system,
-// randomly draws an eCore and then loads and launches
-// the device program on that eCore. It then reads the
-// shared external memory buffer for the core's output
-// message.
+/************************************************************
+ *
+ * dma.c
+ * 
+ * An application that runs the Map Reduce algorithm to count
+ * words in a book
+ *
+ * Copyright (c) 2016 Peter Saunderson <peteasa@gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this program. If not, see <http://www.gnu.org/licenses/>.
+ *
+ *************************************************************/
 
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 #include <unistd.h>
 
 #include <e-loader.h>
 #include <e-hal.h>
 
-#define destAddress (0x4000)	// Bank2 base address
+#define destAddress (0x4000)	// Bank3 base address
 #define numberOfWords (0x1ff0 / 4)
 #define _BufSize   (128)
 #define _BufOffset (0x01000000)
 #define _SeqLen    (16)
+
+const unsigned ShmConsumerSize = 128*16;
+const char ShmConsumerName[] = "econsumer"; 
 
 int main(int argc, char *argv[])
 {
 	unsigned row, col, coreid, i, j;
 	e_platform_t platform;
 	e_epiphany_t dev;
-	e_mem_t emem;
+	e_mem_t mbufconsumer;
 	char emsg[_BufSize];
+    int rc;
 
 	// initialize system, read platform params from
 	// default HDF. Then, reset the platform and
@@ -55,11 +56,17 @@ int main(int argc, char *argv[])
 	e_reset_system();
 	e_get_platform_info(&platform);
 
-	// Allocate a buffer in shared external memory
-	// for message passing from eCore to host.
-	// In epiphany code link to SECTION("shared_dram")
-	// ie char shared_outbuf[128*16] SECTION("shared_dram");
-	e_alloc(&emem, _BufOffset, _BufSize*16);
+    // Allocate a buffer in shared external memory
+    // for message passing from eCore to host.
+    rc = e_shm_alloc(&mbufconsumer, ShmConsumerName, ShmConsumerSize);
+    if (rc != E_OK)
+        rc = e_shm_attach(&mbufconsumer, ShmConsumerName);
+
+    if (rc != E_OK) {
+        fprintf(stderr, "main: Failed to allocate shared memory. Error is %s\n",
+                strerror(errno));
+        return EXIT_FAILURE;
+    }
 
 	// How to find the number of cores available?
 
@@ -91,7 +98,7 @@ int main(int argc, char *argv[])
 
 		// Load the device program onto the selected eCore
 		e_return_stat_t result;
-		result = e_load("/usr/epiphany/bin/e_dma.elf", &dev, row, col, E_FALSE);
+		result = e_load("/home/root/dma/local/bin/e_dma", &dev, row, col, E_FALSE);
 		if (result != E_OK)
 		{
 			fprintf(stderr, "main: 0x%03x Error in e_load %i\n", coreid, result);
@@ -104,7 +111,7 @@ int main(int argc, char *argv[])
 	e_start_group(&dev);
 
 	// Choose the core to start the run
-	row = 1;
+	row = 0;
 	col = 1;
 
 	// Initial the buffer to DMA
@@ -129,7 +136,7 @@ int main(int argc, char *argv[])
 	}
 
 	// Allow time for the processing to complete
-	usleep(100000);
+	usleep(1000000);
 
 	row = 0;
 	col = 0;
@@ -150,8 +157,13 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "main: %3d: Message from eCore 0x%03x (%2d,%2d): ", i, coreid, row, col);
 		
 		// read message from shared buffer.
-		e_read(&emem, 0, 0, _BufSize * (row * 4 + col), emsg, _BufSize);
-
+        // calculate offset
+        unsigned offset;
+        offset = (row * 4 + col) * 128;
+		//e_read(&emem, 0, 0, _BufSize * (row * 4 + col), emsg, _BufSize);
+        //e_read(&mbufconsumer, 0, 0, _BufSize * (row * 4 + col), emsg, _BufSize);
+        e_read(&mbufconsumer, 0, 0, offset, emsg, _BufSize);
+        
 		// Print the message
 		fprintf(stderr, "\"%s\"\n", emsg);
 
@@ -194,7 +206,7 @@ int main(int argc, char *argv[])
 
 	// Release the allocated buffer and finalize the
 	// e-platform connection.
-	e_free(&emem);
+	e_free(&mbufconsumer);
 	e_finalize();
 
 	return 0;
