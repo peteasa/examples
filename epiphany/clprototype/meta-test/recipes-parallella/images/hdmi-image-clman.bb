@@ -35,7 +35,6 @@ IMAGE_INSTALL += " \
               python-psutil \
               python-pyzmq \
               parausers \
-              paraservices \
               busybox-ntpd \
               "
 
