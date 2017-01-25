@@ -1,0 +1,870 @@
+#!/usr/bin/env python
+
+#************************************************************
+#
+# clman
+#
+# Prototype daemon for a Map Reduce algorithm to count
+# words in a book
+#
+# Copyright (c) 2017 Peter Saunderson <peteasa@gmail.com>
+#
+# This program is free software: you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 3 of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this program. If not, see <http://www.gnu.org/licenses/>.
+#
+#************************************************************/
+
+import argparse
+import atexit
+import daemonize
+import logging
+import os
+import psutil
+import pwd
+import re
+import socket
+import struct
+import subprocess
+import sys
+import threading
+import time
+import traceback
+#import zmq.green as zmq #gevent is not installed on yocto target
+import zmq
+
+from logging.handlers import RotatingFileHandler # ensure handler is imported
+
+DEFAULTUSER = 'cl'
+LOGDEFAULTLEVEL = 'debug' # one of critical, error, warning, info, debug
+LOGFILE = "/var/log/clman.log"
+LOGFILEBYTES = 1000000
+LOGFILECOUNT = 3
+PIDFILE = "/var/run/clman.pid"
+ZMQPOLLTIMEOUTMS = 1000
+CLMANPOLLTIMES = 10
+ZMQCLMANPORT = 31000
+ZMQCLMANMCAST = '233.252.1.32'
+ZMQTOPICHELLO = bytearray('hello')
+DEFAULTCONFIGFILE = "/etc/clman.conf"
+ZMQCMDPORT = 31001
+STARTOFTIME = 0
+UNKNOWNRESPIP = '$peerip$'
+
+OPER_BIND = 1
+OPER_CONNECT = 2
+
+MSG_DISCOVERY = b'\x01' # to provide discovery data
+MSG_CLOSE = b'\x02' # to close a connection as part of shutdown
+MSG_PING = b'\x03' # to ping systems - why cant I use the zmq inbuilt polling?
+MSG_SYSTEM = b'\x04' # to provide information about a system
+MSG_COMMAND = b'\x05' # to send / start a command on a parallella
+MSG_REQUEST = b'\x06' # to request data or a list of system names and ip addresses
+
+CMD_IDLE = b'\x01' # set when response sent to client
+CMD_STARTING = b'\x02' # set when command line is parsed and $peerip$ replaced
+CMD_RUNNING = b'\x03' # set before launch
+CMD_REPORTING = b'\x04' # set after launch or on abort
+
+class ClException(Exception):
+    """Base class for cl related exceptions."""
+    def __init__(self, message):
+        self.strerror = message
+        Exception.__init__(self, message)
+
+class ClTempConfigException(ClException):
+    """Temporary Config exception used in Daemon startup"""
+
+class ClTempIOException(ClException):
+    """Temporary IO failure"""
+
+class ClZMQException(ClException):
+    """Permanent failure most likely implmentation"""
+
+class ClMessageException(ClException):
+    """Message contents corrupted"""
+
+class ClCommandException(ClException):
+    """Command corrupted"""
+
+class Daemon(daemonize.Daemonize):
+    """Wrapper for Daemonizer to assist with proper ZMQ shutdown"""
+
+    def __init__(self, app, pid, keep_fds, logger):
+        # used in sigterm, required before the daemon is created
+        self.logger = logger
+        self.devicediscovery = None
+        self.commandhandler = None
+        daemonize.Daemonize.__init__(self, app, pid, self.daemonaction, keep_fds, logger)
+        # and after the daemon is created
+        self.logger = logger
+        self.commandhandler = None
+        self.devicediscovery = None
+        # others are only required in the daemon
+        self.config = None
+        self.zmqservercontext = None
+
+    def sigterm(self, signum, frame):
+        # Ensure ZMQ is shutdown
+        self.shutdown()
+        daemonize.Daemonize.sigterm(self, signum, frame)
+
+    def shutdown(self):
+        global shutdownnow
+        shutdownnow = True
+        if self.commandhandler != None:
+            self.commandhandler.Shutdown()
+        #if self.devicediscovery != None:
+        #    self.devicediscovery.Shutdown()
+
+    def daemonaction(self):
+        global shutdownnow
+        self.logger.info("Starting Clmanager Daemon pid: {0}".format(os.getpid()))
+        try:
+            self.fetchconfig()
+            self.zmqservercontext = zmq.Context()
+            #self.devicediscovery = DaemonDeviceDiscovery(self.logger, self.config, self.zmqservercontext)
+            #self.devicediscovery.start()
+            self.commandhandler = DaemonCommandHandler(self.logger, self.config, self.zmqservercontext, self.devicediscovery)
+            self.commandhandler.start()
+
+            while True:
+                time.sleep(10)
+                if shutdownnow:
+                    break
+        except Exception as e:
+            self.logger.error("Daemon action error {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+
+        self.logger.info("Clmanager Daemon pid: {0} exit".format(os.getpid()))
+        self.shutdown()
+
+        if self.commandhandler != None:
+            self.logger.debug("Waiting for command hanlder thread to terminate")
+            self.commandhandler.join()
+            self.logger.debug("Command handler threads terminated")
+        #if self.devicediscovery != None:
+        #    self.logger.debug("Waiting for device discovery thread to terminate")
+        #    self.devicediscovery.join()
+        #    self.logger.debug("Device discovery threads terminated")
+
+        if self.zmqservercontext != None:
+            try:
+                self.zmqservercontext.destroy()
+            except Exception as e:
+                self.logger.debug("Daemon context destroy error {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+
+    def fetchconfig(self):
+        global shutdownnow
+        for retry in range(1,10,1):
+            try:
+                self.config = ParseConfig()
+                break
+            except ClTempConfigException:
+                if shutdownnow:
+                    break
+                time.sleep(10)
+                if shutdownnow:
+                    break
+                continue
+
+        if self.config == None:
+            logger.error("Config Parsing Failed in daemon")
+            raise ClTempConfigException("Config file {0}: clmanager: {1} does not resolve to an IP address".format(DEFAULTCONFIGFILE, rtn['clmanager']))
+
+class DaemonActionBase(threading.Thread):
+    """Provides assistance with proper ZMQ shutdown"""
+
+    def __init__(self, logger, config, context):
+        self.logger = logger
+        self.config = config
+        self.isclmanager = None
+        self.context = context
+        self.endpoint = None
+        self.opertype = None
+        self.peerid = None
+        threading.Thread.__init__(self)
+
+    def run(self):
+        """Implemented PrepareRx() and WaitForRx() in derived classes"""
+        global shutdownnow
+        self.PrepareRx()
+        while True:
+            if shutdownnow:
+                break
+            self.WaitForRx()
+        shutdownnow = True
+        self.TidyUp()
+
+    def Shutdown(self):
+        global shutdownnow
+        shutdownnow = True
+
+    def IsClmanager(self):
+        try:
+            if self.isclmanager == None:
+                self.isclmanager = Host2Ip(self.config['clmanager']).startswith("127.")
+        except:
+            self.isclmanager = Host2Ip(self.config['clmanager']).startswith("127.")
+
+        return self.isclmanager
+
+    def opensocket(self, stype, endpoint, oper):
+        global shutdownnow
+        if shutdownnow:
+            return
+
+        self.endpoint = endpoint
+        self.oper = oper
+        try:
+            self.zmqclmansock = self.context.socket(stype)
+            if self.oper == OPER_BIND:
+                self.logger.debug("binding to {0}".format(self.endpoint))
+                self.zmqclmansock.bind(self.endpoint)
+            elif self.oper == OPER_CONNECT:
+                self.logger.debug("connecting with {0}".format(self.endpoint))
+                self.zmqclmansock.connect(self.endpoint)
+                #zmqclmansock.setsockopt(zmq.SUBSCRIBE, ZMQTOPICHELLO)
+        except Exception as e:
+            self.logger.error("Daemon error {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+            raise ClZMQException("Daemon error")
+
+    def closesocket(self):
+        if self.oper == OPER_BIND:
+            try:
+                self.zmqclmansock.unbind(self.endpoint)
+            except Exception as e:
+                self.logger.debug("Daemon error on unbind {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+        elif self.oper == OPER_CONNECT:
+            try:
+                self.zmqclmansock.disconnect(self.endpoint)
+            except Exception as e:
+                self.logger.debug("Daemon error in disconnect {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+        try:
+            self.zmqclmansock.close()
+        except Exception as e:
+            self.logger.debug("Daemon error on close socket {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+    
+    def OldMessagePack(self, msg):
+        rtn = "SimpleEncode"
+        for i in msg:
+            rtn = "{0}:{1}".format(rtn,i)
+        return rtn
+
+    def OldMessageUnpack(self, msg):
+        rtn = "Unknown"
+        simple = "SimpleEncode"
+        if len(msg) > len(simple):
+            if msg[:len(simple)] == simple:
+                rtn = msg[len(simple) - len(msg) + 1:].split(':')
+        return rtn
+
+##class DaemonDeviceDiscovery(DaemonActionBase):
+
+class DaemonCommandHandler(DaemonActionBase):
+    """Client request and Server Launch"""
+
+    def __init__(self, logger, config, context, daemoninfo):
+        self.logger = logger
+        DaemonActionBase.__init__(self, logger, config, context)
+        self.zmqclmansock = None
+        self.daemoninfo = daemoninfo
+
+    def WaitForRx(self):
+        global shutdown
+        mp = None
+        # open another socket for response traffic
+        try:
+            mp = self.zmqclmansock.recv_multipart(copy=False)
+        except Exception as e:
+            self.logger.error("Error in receive {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+            self.closesocket()
+            time.sleep(1)
+            self.PrepareRx()
+            return
+
+        message = mp[0].bytes
+
+        command = Command(None, 'None')
+        
+        try:
+            command.Unpack(message, 0)
+        except Exception as e:
+            self.logger.error("Error in command unpack {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+            self.closesocket()
+            time.sleep(1)
+            self.PrepareRx()
+            return
+
+        self.logger.debug("{0}".format(command.OldPack()))
+        try:
+            command.Launch()
+        except Exception as e:
+            failure = [sys.exc_info()[0].__name__, e.strerror]
+            self.logger.error("Error in command execute {0}".format(failure))
+            command.Abort(-1, failure)
+
+        try:
+            self.zmqclmansock.send(command.Pack())
+        except Exception as e:
+            self.logger.error("Error in sending response {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+            self.closesocket()
+            time.sleep(1)
+            self.PrepareRx()
+            return
+
+    def PrepareRx(self):
+        endpoint = "tcp://*:{0}".format(ZMQCMDPORT)
+        self.opensocket(zmq.PAIR, endpoint, OPER_BIND)
+
+    def TidyUp(self):
+        endpoint = "tcp://*:{0}".format(ZMQCMDPORT)
+        self.closesocket(endpoint, OPER_BIND)
+
+##class System(object):
+
+class Command(object):
+    """Wrapper for commands to be executed"""
+    def __init__(self, destinationname, command):
+        if len(command) == 0:
+            raise ClCommandException("Must have a command")
+        if command[0] == None or command[0].strip() == '':
+            raise ClCommandException("Must have a command")
+            
+        self.command = command
+        self.username = DEFAULTUSER
+
+        self.cmdstdout = None
+        self.cmdstderr = ['']
+        self.cmdrtncode = 0
+        self.getids()
+        self.sourceip = None
+        self.destinationname = destinationname
+        self.destinationip = None
+        self.result = None
+
+    def getids(self):
+        try:
+            self.gid = pwd.getpwnam(self.username).pw_uid
+            self.uid = pwd.getpwnam(self.username).pw_gid
+            self.udir = pwd.getpwnam(self.username).pw_dir
+        except Exception as e:
+            logger.error("Command launch failed {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+            self.cmdstderr = [sys.exc_info()[0].__name__, e.strerror]
+
+    def Launch(self):
+        global logger
+        logger.info("Launch {0}".format(self.command))
+
+        env = os.environ.copy()
+        env[ 'HOME'     ]  = self.udir
+        env[ 'LOGNAME'  ]  = self.username
+        env[ 'PWD'      ]  = self.udir
+        env[ 'USER'     ]  = self.username
+
+        #logger.info("Launch env {0} uid {1} gid {2} command {3}".format(env, self.uid, self.gid, self.command))
+        try:
+            cmdprocess = subprocess.Popen(args=self.command, preexec_fn=demote(self.uid, self.gid), cwd=self.udir, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            cmdout = cmdprocess.communicate()
+            self.cmdstdout = cmdout[0]
+            self.cmdstderr = [cmdout[1]]
+            self.cmdrtncode = cmdprocess.returncode
+        except Exception as e:
+            logger.error("Command launch failed {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+            self.cmdstderr = [sys.exc_info()[0].__name__, e.strerror]
+
+        self.result = self.cmdrtncode == 0 and self.cmdstderr == ['']
+        if self.IsOK():
+                logger.info("Launch SUCCESS: stdout: - {0} -".format(self.cmdstdout))
+        else:
+            logger.error("Launch: Command failed. Return code: {0} stdout - {1} - stderr - {2} -".format(self.cmdrtncode, self.cmdstdout, self.cmdstderr))
+
+        self.running = False
+
+    def IsRunning(self):
+        return self.running
+
+    def IsOK(self):
+        return self.result == True
+
+    def GetReturnCode(self):
+        return self.result
+
+    def GetStdout(self):
+        return self.cmdstdout
+
+    def GetStderr(self):
+        return self.cmdstderr
+
+    def GetRtnCode(self):
+        return self.cmdrtncode
+
+    def Abort(self, result, cmdstderr):
+        self.running = False
+        self.result = result
+        try:
+            self.cmdstderr + cmdstderr
+        except:
+            self.cmdstderr + [cmdstderr]
+
+    def SourceIp(self):
+        return self.sourceip
+
+    def UpdateSourceIp(self, ip):
+        self.sourceip = ip
+        # TODO check if command string has UNKNOWNRESPIP and update
+
+    def DestinationIp(self):
+        return self.destinationip
+
+    def UpdateDestinationIp(self, ip):
+        self.destinationip = ip
+
+    def DestinationName(self):
+        return self.destinationname
+                        
+    def Pack(self):
+        item = PackByte(MSG_COMMAND)
+        item.extend( PackString(self.destinationname) )
+        item.extend( PackStringList(self.command) )
+        item.extend( PackBool(self.result) )
+        item.extend( PackString(self.sourceip) )
+        item.extend( PackString(self.destinationip) )
+        item.extend( PackInt(self.cmdrtncode) )
+        item.extend( PackString(self.cmdstdout) )
+        item.extend( PackStringList(self.cmdstderr) )
+        return item
+
+    def Unpack(self, msg, pos):
+        items = UnpackByte(msg, pos)
+        if items[1] != MSG_COMMAND:
+            raise ClMessageException("Expected MSG_COMMAND got {0}".format(msg[pos+1]))
+
+        items = UnpackString(msg, items[0])
+        self.destinationname = items[1]
+        items = UnpackStringList(msg, items[0])
+        self.command = items[1]
+        items = UnpackBool(msg, items[0])
+        self.result = items[1]
+        if self.result == None:
+            self.running = True
+        else:
+            self.running = False
+        items = UnpackString(msg, items[0])
+        self.sourceip = items[1]
+        items = UnpackString(msg, items[0])
+        self.destinationip = items[1]
+        items = UnpackInt(msg, items[0])
+        self.cmdrtncode = items[1]
+        items = UnpackString(msg, items[0])
+        self.cmdstdout = items[1]
+        items = UnpackStringList(msg, items[0])
+        self.cmdstderr = items[1]
+        return items[0]
+        
+    def OldPack(self):
+        if self.command == '':
+            rtn = "None"
+        else:
+            rtn = "{0}:{1}:{2}:{3}:{4}:{5}".format(self.destinationname, self.command, self.result, self.sourceip, self.destinationip, self.cmdstdout)
+
+        return rtn
+
+    def OldUnpack(self, msg, pos):
+        if msg[pos] == "None":
+            rtn = pos+1
+        else:
+            self.destinationname = msg[pos]
+            self.command = eval(msg[pos+1])
+            self.result = msg[pos+2]
+            if self.result == 'None':
+                self.running = True
+                self.result = None
+            else:
+                self.running = False
+                self.result = eval(self.result)
+            self.sourceip = msg[pos+3]
+            self.destinationip = msg[pos+4]
+            self.cmdstdout = msg[pos+5]
+            rtn = pos+6
+        return rtn
+
+def PackNone(n):
+    rtn = [False, None]
+    if n == None:
+        s = 'None'
+        item = bytearray( struct.pack("<{0}s".format(len(s)), s) )
+        rtn[1] =  bytearray( struct.pack("<ci", "s", len(item)) )
+        rtn[1].extend(item)
+        rtn[0] = True
+    return rtn
+
+def UnpackNone(msg, pos):
+    rtn = [False, pos, None]
+    tl = struct.unpack("<ci", msg[pos:pos+5])
+    if tl[0] == 's':
+        item = struct.unpack("<{0}{1}".format(tl[1],tl[0]), msg[pos+5:pos+5+tl[1]])
+        rtn[2] = item[0]
+        if rtn[2] == 'None':
+            rtn[2] = None
+            rtn[1] = pos+5+tl[1]
+            rtn[0] = True
+    return rtn
+
+def PackInt(i):
+    nonecheck, rtn = PackNone(i)
+    if not nonecheck:
+        item = bytearray( struct.pack("<i", i) )
+        rtn = bytearray( struct.pack("<ci", "i", len(item)) )
+        rtn.extend(item)
+    return rtn
+
+def UnpackInt(msg, pos):
+    nonecheck, npos, rtn = UnpackNone(msg,pos)
+    if not nonecheck:
+        tl = struct.unpack("<ci", msg[pos:pos+5])
+        if tl[0] == 'i':
+            item = struct.unpack("<{0}".format(tl[0]), msg[pos+5:pos+5+tl[1]])
+            rtn = item[0]
+            npos = pos+5+tl[1]
+        else:
+            raise ClMessageException("Expected 'i' got {0}".format(msg[pos]))
+    return [npos, rtn]
+
+def PackBool(b):
+    nonecheck, rtn = PackNone(b)
+    if not nonecheck:
+        item = bytearray( struct.pack("<?", b) )
+        rtn = bytearray( struct.pack("<c", "?") )
+        rtn.extend(item)
+    return rtn
+
+def UnpackBool(msg, pos):
+    nonecheck, npos, rtn = UnpackNone(msg,pos)
+    if not nonecheck:
+        if msg[pos] == '?':
+            rts = struct.unpack('<?', msg[pos+1])
+            rtn = rts[0]
+            npos = pos+2
+        else:
+            raise ClMessageException("Expected '?' got {0}".format(msg[pos]))
+    return [npos, rtn]
+
+def PackString(s):
+    if s == None:
+        s = 'None'
+    try:
+        item = bytearray( struct.pack("<{0}s".format(len(s)), s) )
+        rtn = bytearray( struct.pack("<ci", "s", len(item)) )
+        rtn.extend(item)
+    except:
+        snd = 'None'
+        item = bytearray( struct.pack("<{0}s".format(len(snd)), snd) )
+        rtn = bytearray( struct.pack("<ci", "s", len(item)) )
+        rtn.extend(item)
+    return rtn
+
+def UnpackString(msg, pos):
+    rtn = None
+    tl = struct.unpack("<ci", msg[pos:pos+5])
+    if tl[0] == 's':
+        item = struct.unpack("<{0}{1}".format(tl[1],tl[0]), msg[pos+5:pos+5+tl[1]])
+        rtn = item[0]
+        if rtn == 'None':
+            rtn = None
+    else:
+        raise ClMessageException("Expected 's' got {0}".format(msg[pos]))
+    return [pos+5+tl[1], rtn]
+
+def PackStringList(s):
+    item = bytearray()
+    for i in s:
+        item.extend( PackString(i) )
+    rtn = bytearray( struct.pack("<ci", "S", len(item)) )
+    rtn.extend(item)
+    return rtn
+
+def UnpackStringList(msg, pos):
+    rtn = []
+    tl = struct.unpack("<ci", msg[pos:pos+5])
+    if tl[0] == 'S':
+        count = pos+5
+        while count < pos+5+tl[1]:
+            item = UnpackString(msg, count)
+            count = item[0]
+            rtn.append(item[1])
+    else:
+        raise ClMessageException("Expected 'S' got {0}".format(msg[pos]))
+    return [pos+5+tl[1], rtn]
+
+def PackByte(c):
+    item = bytearray( struct.pack("<c", c) )
+    rtn = bytearray( struct.pack("<c", "c") )
+    rtn.extend(item)
+    return rtn
+
+def UnpackByte(msg, pos):
+    if msg[pos] == 'c':
+        rts = struct.unpack('<c', msg[pos+1])
+        rtn = rts[0]
+    else:
+        raise ClMessageException("Expected 'c' got {0}".format(msg[pos]))
+    return [pos+2, rtn]
+
+def demote(user_uid, user_gid):
+    def result():
+        os.setgid(user_gid)
+        os.setuid(user_uid)
+    return result
+
+class dummylogger(object):
+    """root can create log files in /var/log, normal user can't
+       root can launch program in another user context, normal user can't"""
+    def info(self, msg):
+        print ("INFO:clman:dummylogger {0}".format(msg))
+        pass
+    def error(self, msg):
+        print ("ERROR:clman:dummylogger {0}".format(msg))
+        pass
+    def debug(self, msg):
+        print ("DEBUG:clman:dummylogger {0}".format(msg))
+        pass
+    def warn(self, msg):
+        print ("WARN:clman:dummylogger {0}".format(msg))
+        pass
+    def setLevel(self, level):
+        pass
+    def addHandler(self, handler):
+        pass
+    
+class dummylogfilehandler(object):
+    """root can create log files in /var/log, normal user can't
+       root can launch program in another user context, normal user can't"""
+    def setLevel(self, level):
+        pass
+    def setFormatter(self, formatter):
+        pass
+
+def CommandLineArguments():
+    parser = argparse.ArgumentParser()
+
+    # https://docs.python.org/2/library/argparse.html
+    # Template command:
+    # clman <options> command <command options>
+    # command is any command to run on a remote system
+    parser.add_argument('command', metavar='command', type=str, help='command to run on remote host', nargs=argparse.REMAINDER)
+    # <options> are
+    # -h --help will output help
+    parser.add_argument('-k', '--kill', dest='killjobordaemon', action='store_true', help='kill the job or daemon')
+    parser.add_argument('-d', '--daemon', dest='daemon', action='store_true', help='run as a daemon')
+    parser.add_argument('-l', '--log', dest='loglevel', type=str, help='critical, error, warning, info, debug', default=LOGDEFAULTLEVEL)
+
+    args = parser.parse_args()
+    if args.command == [] and not args.daemon:
+        parser.print_help()
+        exit(1)
+
+    return args
+
+def IsValidIp(ip):
+    p = re.compile('^\d+\.\d+\.\d+\.\d+$')
+    return p.match(ip)
+
+def RawHost2Ip(host):
+    rtn = ''
+    try:
+        rtn = socket.gethostbyname(host)
+    except:
+        pass
+    return rtn
+
+def Host2Ip(host):
+    if IsValidIp(host):
+        rtn = host
+    else:
+        rtn = RawHost2Ip(host)
+        if not IsValidIp(rtn):
+            rtn = RawHost2Ip("{0}.local".format(host))
+    return rtn
+
+def HostName(host):
+    if IsValidIp(host):
+        if host.startswith("127."):
+            rtn = socket.gethostname().lower()
+        else:
+            rtn = socket.gethostbyaddr(host)
+    else:
+        rtn = host
+        tmp = RawHost2Ip(host)
+        if not tmp.startswith("127."):
+            rtn = socket.getfqdn(host)
+        elif not IsValidIp(tmp):
+            rtn = "{0}.local".format(host)
+    return rtn
+
+def ParseConfig():
+    global logger
+    rtn = dict()
+    
+    with open(DEFAULTCONFIGFILE, "r") as infile:
+        for line in infile:
+            entry = line.split(":")
+            if len(entry) == 2:
+                key = entry[0].strip()
+                value = entry[1].strip()
+                if key in rtn.keys():
+                    logger.warn("Config file has duplicate ({0}, {1}) value updated {2}".format(key, rtn[key], value))
+                    rtn[key] = value
+                else:
+                    rtn.update({key: value})
+    logger.debug("Config is {0}".format(rtn))
+
+    if 'clmanager' not in rtn.keys():
+        raise RuntimeError("Config file {0} requires \"clmanager: <hostname>\" for the manager".format(DEFAULTCONFIGFILE))
+
+    rtn.update({'clmanagerip':Host2Ip(rtn['clmanager'])})
+    rtn.update({'myhostname':HostName(socket.gethostname().lower())})
+    rtn.update({'myname':"{0}@{1}".format(rtn['myhostname'], STARTOFTIME)})
+    rtn.update({'myip':Host2Ip(rtn['myhostname'])})
+    rtn.update({'clmanagerdirect':False})
+
+    if not IsValidIp(rtn['clmanagerip']):
+        raise ClTempConfigException("Config file {0}: clmanager: {1} does not resolve to an IP address".format(DEFAULTCONFIGFILE, rtn['clmanager']))
+
+    return rtn
+    
+def Init():
+    global args
+    global config
+    global logger
+    global logfilehandler
+    global shutdownnow
+
+    shutdownnow = False
+
+    args = CommandLineArguments()
+    loglevel = args.loglevel.upper()
+
+    numeric_level = getattr(logging, loglevel, None)
+    if not isinstance(numeric_level, int):
+        raise ValueError('Invalid log level: %s' % loglevel)
+
+    try:
+        logfilehandler = logging.handlers.RotatingFileHandler(LOGFILE, maxBytes=LOGFILEBYTES, backupCount=LOGFILECOUNT)
+        logger = logging.getLogger(__name__)
+    except:
+        logfilehandler = dummylogfilehandler()
+        logger = dummylogger()
+
+    logfilehandler.setLevel(numeric_level)
+    logger.setLevel(numeric_level)
+    FORMAT = '%(asctime)s %(levelname)s:%(module)s:%(lineno)s:%(funcName)s(): %(message)s'
+    formatter=logging.Formatter(fmt=FORMAT)
+    logfilehandler.setFormatter(formatter)
+    logger.addHandler(logfilehandler)
+    logger.debug("ZMQ version {0}".format(zmq.pyzmq_version()))
+    logger.debug('\n'.join(sys.path))
+
+    config = None
+    try:
+        config = ParseConfig()
+    except:
+        pass
+
+    logger.debug("End Init config: {0}".format(config))
+
+def Main():
+    global args
+    global config
+    global logfilehandler
+   
+    rtn = 0
+    
+    if args.daemon:
+        if args.daemon and args.killjobordaemon:
+            try:
+                fp = open(PIDFILE)
+                lines = fp.readlines()
+                p = psutil.Process(int(lines[0]))
+                p.terminate()
+                logger.info("Daemon terminated from command line")
+            except psutil.NoSuchProcess:
+                print ("WARNING: Daemon was not running")
+                rtn = -1
+            except psutil.AccessDenied:
+                print ("WARNING: Daemon has to be killed by root")
+                rtn = -1
+            except Exception as e:
+                print (sys.exc_info()[0].__name__, e.strerror)
+                rtn = -1
+        else:
+            keepfds = [logfilehandler.stream.fileno()]
+            daemon = Daemon(app="clman", pid=PIDFILE, keep_fds=keepfds, logger=logger)
+            try:
+                daemon.start()
+            except:
+                pass
+
+    elif config == None:
+        logger.error("Error parsing config file".format(ParseConfig()))
+        rtn = -1
+
+    elif args.command != []:
+        zmqclientcontext = zmq.Context()
+        zmqclientsocket = zmqclientcontext.socket(zmq.PAIR)
+
+        dst = "tcp://parallella-hdmi.local:{0}".format(ZMQCMDPORT)
+        
+        logger.info("Sending {0} to {1}".format(args.command, dst))
+
+        command = Command('parallella-hdmi', args.command)
+
+        ok = True
+        try:
+            if ok:
+                zmqclientsocket.connect(dst)
+        except Exception as e:
+            ok = False
+            logger.error("Client error in connect {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+
+        try:
+            if ok:
+                zmqclientsocket.send(Command('P0',args.command).Pack())
+        except Exception as e:
+            ok = False
+            logger.error("Client error in send {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+
+        if ok:
+            logger.info("Command sent to server")
+
+        msg = None
+        try:
+            if ok:
+                msg = zmqclientsocket.recv()
+        except Exception as e:
+            ok = False
+            logger.error("Client error in receive {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+
+        if ok:
+            command.Unpack(msg,0)
+
+        if command.IsOK():
+            logger.info("{0}".format(command.GetStdout()))
+        else:
+            logger.error("Command failed and returned {0}".format(command.GetReturnCode()))
+            logger.error("Command stderr {0}".format(command.GetStderr()))
+ 
+    exit(rtn)
+
+# Startup code
+if __name__ == "__main__":
+    Init()
+    Main()

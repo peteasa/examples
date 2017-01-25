@@ -1,0 +1,204 @@
+#!/usr/bin/env python
+
+#************************************************************
+#
+# wordc
+#
+# Prototype application to generate words for a Map Reduce
+# algorithm to count
+#
+# Copyright (c) 2017 Peter Saunderson <peteasa@gmail.com>
+#
+# This program is free software: you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 3 of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this program. If not, see <http://www.gnu.org/licenses/>.
+#
+#************************************************************/
+
+import argparse
+import itertools
+import logging
+import mmap
+import sys
+import time
+# import zmq.green as zmp
+import zmq
+
+from logging.handlers import RotatingFileHandler # ensure handler is imported
+
+DEFAULTDATAFILE = '49008-0.txt'
+
+LOGDEFAULTLEVEL = 'debug' # one of critical, error, warning, info, debug
+LOGFILE = './wordc.log'
+LOGFILEBYTES = 1000000
+LOGFILECOUNT = 3
+
+def Processor():
+    global args
+    global logger
+    
+    zmqclientcontext = zmq.Context()
+    zmqclientsocket = zmqclientcontext.socket(eval(args.zmqtype))
+        
+    ok = True
+    try:
+        if ok:
+            zmqclientsocket.connect(args.endpoint)
+    except Exception as e:
+        ok = False
+        logger.error("Client error in connect {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+
+    try:
+        if ok:
+            zmqclientsocket.send("next")
+    except Exception as e:
+        ok = False
+        logger.error("Client error in send {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+
+    if ok:
+        logger.info("Command sent to server")
+
+    msg = None
+    try:
+        if ok:
+            msg = zmqclientsocket.recv()
+    except Exception as e:
+        ok = False
+        logger.error("Client error in receive {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+
+    if msg != None:
+        print len(msg), msg
+        logger.debug("Received {0}".format(msg))
+
+def DataGenerator():
+    global args
+
+    f = open(args.provider)
+    mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+
+    i = itertools.count(0)
+    
+    total = mm.size()
+
+    while mm.tell() < total:
+        yield next(i), mm.readline()
+
+    mm.close()
+
+def DataProvider():
+    global args
+
+    zmqclientcontext = zmq.Context()
+    zmqclientsocket = zmqclientcontext.socket(eval(args.zmqtype))
+
+    ok = True
+    try:
+        if ok:
+            zmqclientsocket.bind(args.endpoint)
+    except Exception as e:
+        ok = False
+        logger.error("Client already running? - Error in bind {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+        return
+
+    generator = DataGenerator()
+
+    while True:
+        msg = None
+        try:
+            if ok:
+                msg = zmqclientsocket.recv()
+        except Exception as e:
+            ok = False
+            logger.error("Client error in receive {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+
+        if msg != None:
+            print len(msg)
+            print msg
+
+        if msg == "THE END":
+            break;
+
+        try:
+            if ok:
+                map_key, map_item = next(generator)
+                print map_key, map_item
+                zmqclientsocket.send(map_item)
+        except StopIteration:
+            # TODO need to properly terminate
+            zmqclientsocket.send("THE END")
+            break;
+        
+        except Exception as e:
+            ok = False
+            logger.error("Client error in send {0} {1}".format(sys.exc_info()[0].__name__, e.strerror))
+
+        if ok:
+            logger.info("Command sent to server")
+
+
+def CommandLineArguments():
+    parser = argparse.ArgumentParser()
+
+    # https://docs.python.org/2/library/argparse.html
+    # Template command:
+    # mapreduce <options>
+    # <options> are
+    # -h --help will output help
+    parser.add_argument('-e', '--endpoint', dest='endpoint', type=str, help='endpoint for data source')
+    parser.add_argument('-t', '--type', dest='zmqtype', type=str, help='zmq socket type')
+    parser.add_argument('-p', '--provider', dest='provider', type=str, help='file name for data provider')
+    parser.add_argument('-l', '--log', dest='loglevel', type=str, help='critical, error, warning, info, debug', default=LOGDEFAULTLEVEL)
+
+    args = parser.parse_args()
+
+    return args
+
+def Init():
+    global args
+    global logger
+    global logfilehandler
+
+    args = CommandLineArguments()
+    loglevel = args.loglevel.upper()
+
+    logfilehandler = logging.handlers.RotatingFileHandler(LOGFILE, maxBytes=LOGFILEBYTES, backupCount=LOGFILECOUNT)
+    logger = logging.getLogger(__name__)
+
+    numeric_level = getattr(logging, loglevel, None)
+    if not isinstance(numeric_level, int):
+        raise ValueError('Invalid log level: %s' % loglevel)
+
+    logfilehandler.setLevel(numeric_level)
+    logger.setLevel(numeric_level)
+    FORMAT = '%(asctime)s %(levelname)s:%(module)s:%(lineno)s:%(funcName)s(): %(message)s'
+    formatter=logging.Formatter(fmt=FORMAT)
+    logfilehandler.setFormatter(formatter)
+    logger.addHandler(logfilehandler)
+    logger.debug("ZMQ version {0}".format(zmq.pyzmq_version()))
+    logger.debug('\n'.join(sys.path))
+
+def Main():
+    global args
+    global logger
+
+    if args.endpoint != None and args.zmqtype != None:
+        if args.provider != None:
+            DataProvider()
+        else:
+            Processor()
+    
+        
+
+# Startup code
+if __name__ == "__main__":
+    Init()
+    Main()

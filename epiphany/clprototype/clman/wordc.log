@@ -1,0 +1,112 @@
+2017-01-25 16:40:57,833 DEBUG:wordc:186:Init(): ZMQ version 15.2.0
+2017-01-25 16:40:57,833 DEBUG:wordc:187:Init(): /home/pas/Projects/Various/clman
+/usr/local/lib/python2.7/dist-packages/ReviewBoard-1.7.20-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/recaptcha_client-1.0.6-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/python_memcached-1.53-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/paramiko-1.12.0-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/mimeparse-0.1.3-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/django_pipeline-1.2.24-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/Djblets-0.7.27-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/django_evolution-0.6.9-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/Django-1.4.10-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/ecdsa-0.10-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/PIL-1.1.7-py2.7-linux-x86_64.egg
+/usr/local/lib/python2.7/dist-packages/feedparser-5.1.3-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/RBTools-0.5.2-py2.7.egg
+/usr/lib/python2.7
+/usr/lib/python2.7/plat-x86_64-linux-gnu
+/usr/lib/python2.7/lib-tk
+/usr/lib/python2.7/lib-old
+/usr/lib/python2.7/lib-dynload
+/usr/local/lib/python2.7/dist-packages
+/usr/lib/python2.7/dist-packages
+/usr/lib/python2.7/dist-packages/PILcompat
+/usr/lib/python2.7/dist-packages/gst-0.10
+/usr/lib/python2.7/dist-packages/gtk-2.0
+/usr/lib/python2.7/dist-packages/ubuntu-sso-client
+/usr/lib/python2.7/dist-packages/wx-3.0-gtk2
+2017-01-25 16:40:58,350 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,361 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,371 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,382 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,393 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,403 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,414 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,425 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,435 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,446 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,457 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,467 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,478 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,489 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,499 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,510 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,521 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,531 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,542 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,553 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,563 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,574 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,585 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,595 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,606 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,616 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,627 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,638 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:40:58,649 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:23,403 DEBUG:wordc:186:Init(): ZMQ version 15.2.0
+2017-01-25 16:41:23,403 DEBUG:wordc:187:Init(): /home/pas/Projects/Various/clman
+/usr/local/lib/python2.7/dist-packages/ReviewBoard-1.7.20-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/recaptcha_client-1.0.6-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/python_memcached-1.53-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/paramiko-1.12.0-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/mimeparse-0.1.3-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/django_pipeline-1.2.24-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/Djblets-0.7.27-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/django_evolution-0.6.9-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/Django-1.4.10-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/ecdsa-0.10-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/PIL-1.1.7-py2.7-linux-x86_64.egg
+/usr/local/lib/python2.7/dist-packages/feedparser-5.1.3-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/RBTools-0.5.2-py2.7.egg
+/usr/lib/python2.7
+/usr/lib/python2.7/plat-x86_64-linux-gnu
+/usr/lib/python2.7/lib-tk
+/usr/lib/python2.7/lib-old
+/usr/lib/python2.7/lib-dynload
+/usr/local/lib/python2.7/dist-packages
+/usr/lib/python2.7/dist-packages
+/usr/lib/python2.7/dist-packages/PILcompat
+/usr/lib/python2.7/dist-packages/gst-0.10
+/usr/lib/python2.7/dist-packages/gtk-2.0
+/usr/lib/python2.7/dist-packages/ubuntu-sso-client
+/usr/lib/python2.7/dist-packages/wx-3.0-gtk2
+2017-01-25 16:41:23,920 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:23,931 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:23,942 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:23,952 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:23,963 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:23,974 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:23,984 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:23,995 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,006 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,016 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,027 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,038 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,048 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,059 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,070 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,080 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,091 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,102 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,112 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,123 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,134 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,144 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,155 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,166 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,176 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,187 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,198 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,208 INFO:wordc:145:DataProvider(): Command sent to server
+2017-01-25 16:41:24,219 INFO:wordc:145:DataProvider(): Command sent to server

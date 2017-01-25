@@ -1,0 +1,83 @@
+DEBUG:clman:dummylogger ZMQ version 15.2.0
+DEBUG:clman:dummylogger /home/pas/Projects/Various/clman
+/usr/local/lib/python2.7/dist-packages/ReviewBoard-1.7.20-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/recaptcha_client-1.0.6-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/python_memcached-1.53-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/paramiko-1.12.0-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/mimeparse-0.1.3-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/django_pipeline-1.2.24-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/Djblets-0.7.27-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/django_evolution-0.6.9-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/Django-1.4.10-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/ecdsa-0.10-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/PIL-1.1.7-py2.7-linux-x86_64.egg
+/usr/local/lib/python2.7/dist-packages/feedparser-5.1.3-py2.7.egg
+/usr/local/lib/python2.7/dist-packages/RBTools-0.5.2-py2.7.egg
+/usr/lib/python2.7
+/usr/lib/python2.7/plat-x86_64-linux-gnu
+/usr/lib/python2.7/lib-tk
+/usr/lib/python2.7/lib-old
+/usr/lib/python2.7/lib-dynload
+/usr/local/lib/python2.7/dist-packages
+/usr/lib/python2.7/dist-packages
+/usr/lib/python2.7/dist-packages/PILcompat
+/usr/lib/python2.7/dist-packages/gst-0.10
+/usr/lib/python2.7/dist-packages/gtk-2.0
+/usr/lib/python2.7/dist-packages/ubuntu-sso-client
+/usr/lib/python2.7/dist-packages/wx-3.0-gtk2
+DEBUG:clman:dummylogger Config is {'clmanager': 'homemegaubuntu'}
+DEBUG:clman:dummylogger End Init config: {'myhostname': 'homemegaubuntu', 'clmanagerip': '127.0.0.1', 'clmanagerdirect': False, 'clmanager': 'homemegaubuntu', 'myip': '127.0.0.1', 'myname': 'homemegaubuntu@0'}
+INFO:clman:dummylogger Sending ['./run_wordc.sh', 'tcp://192.169.0.118:31010'] to tcp://parallella-hdmi.local:31001
+INFO:clman:dummylogger Command sent to server
+INFO:clman:dummylogger endpoint tcp://192.169.0.118:31010 Type (null)
+consumer sends: c3 l0x0 o0x0 
+clcoresendcmd(0): poff 0x10 pddatlength 0x8 pdoffset 0x10
+clcoresendcmd(1): poff 0x20 pddatlength 0x8 pdoffset 0x38
+clcoresendcmd(2): poff 0x30 pddatlength 0x8 pdoffset 0x60
+clcoresendcmd(3): poff 0x40 pddatlength 0x8 pdoffset 0x10
+clcoresendcmd(4): poff 0x50 pddatlength 0x8 pdoffset 0x38
+clcoresendcmd(5): poff 0x60 pddatlength 0x8 pdoffset 0x60
+clcoresendcmd(6): poff 0x70 pddatlength 0x8 pdoffset 0x10
+clcoresendcmd(7): poff 0x0 pddatlength 0x8 pdoffset 0x38
+clcoresendcmd(8): poff 0x10 pddatlength 0x8 pdoffset 0x60
+clcoresendcmd(9): poff 0x20 pddatlength 0x8 pdoffset 0x10
+clcoresendcmd(10): poff 0x30 pddatlength 0x8 pdoffset 0x38
+clcoresendcmd(11): poff 0x40 pddatlength 0x8 pdoffset 0x60
+clcoresendcmd(12): poff 0x50 pddatlength 0x8 pdoffset 0x10
+clcoresendcmd(13): poff 0x60 pddatlength 0x8 pdoffset 0x38
+clcoresendcmd(14): poff 0x70 pddatlength 0x8 pdoffset 0x60
+clcoresendcmd(15): poff 0x0 pddatlength 0x8 pdoffset 0x10
+clcoresendcmd(16): poff 0x10 pddatlength 0x8 pdoffset 0x38
+clcoresendcmd(17): poff 0x20 pddatlength 0x8 pdoffset 0x60
+clcoresendcmd(18): poff 0x30 pddatlength 0x8 pdoffset 0x10
+clcoresendcmd(19): poff 0x40 pddatlength 0x8 pdoffset 0x38
+clcoresendcmd(20): poff 0x50 pddatlength 0x8 pdoffset 0x60
+clcoresendcmd(21): poff 0x60 pddatlength 0x8 pdoffset 0x10
+clcoresendcmd(22): poff 0x70 pddatlength 0x8 pdoffset 0x38
+clcoresendcmd(23): poff 0x0 pddatlength 0x8 pdoffset 0x60
+clcoresendcmd(24): poff 0x10 pddatlength 0x8 pdoffset 0x10
+clcoresendcmd(25): poff 0x20 pddatlength 0x8 pdoffset 0x38
+clcoresendcmd(26): poff 0x30 pddatlength 0x8 pdoffset 0x60
+clcoresendcmd(27): poff 0x40 pddatlength 0x8 pdoffset 0x10
+clcoresendcmd(28): poff 0x50 pddatlength 0x8 pdoffset 0x38
+wc_evstrt: End of input
+clcoresendcmd(29): poff 0x60 pddatlength 0x0 pdoffset 0x0
+consumer sends: c3 l0x0 o0x0 
+main: Message from eCore 0x000 ( 0, 0): "wrn4o4r0s40000 wrn5o4r0s40000 wrn6o4r0s40000 wrn4o4r0s40000 wrn5o4r0s40000 wrn6o4r0s40000 w0x5620.p19.u3Denmarke_-wrn6o4r0s40000 wrn6o4r0s40000 w0x5620.p20.u3Denmarke_-"
+main: Message from eCore 0x001 ( 0, 1): "u6following-p20.u6following-u6following-p21.u6following-wrn0o4r0s40000 w0x5620.p22.u6following-wrn0o4r0s40000 wrn0o4r0s40000 w0x5620.p23.u6following-"
+main: Message from eCore 0x002 ( 0, 2): "qu0-p1.u1with-p2.u4with-p4.u6with-p5.u6with-p6.u7with-p7.u7with-p8.u7with-p9.u7with-p10.u7with-"
+main: Message from eCore 0x003 ( 0, 3): "qu0-p1.u1known-p2.u1known-p3.u3known-"
+main: Message from eCore 0x004 ( 1, 0): "qu0-p1.u1edition-p2.u2edition-p3.u4edition-p4.u4edition-p5.u4edition-p6.u4edition-p7.u4edition-p8.u4edition-p9.u5edition-p10.u5edition-p11.u6edition-p14.u9edition-"
+main: Message from eCore 0x005 ( 1, 1): "qu0-p1.u1ser-|-p3.u4ser-|-p5.u6ser-|-p8.u10ser-|-p9.u11ser-|-"
+main: Message from eCore 0x006 ( 1, 2): "qu0-p1.u1appeared-p2.u2appeared-p4.u4appeared-p5.u5appeared-p6.u6appeared-p7.u6appeared-p8.u6appeared-"
+main: Message from eCore 0x007 ( 1, 3): "qu0-p1.u1in-p2.u2in-p3.u3in-p6.u6in-p7.u7in-p8.u7in-p9.u8in-p11.u10in-p12.u10in-p13.u11in-p14.u11in-p15.u11in-"
+main: Message from eCore 0x008 ( 2, 0): "qu0-p1.u1PREFACE.-p2.u2PREFACE.-p3.u3PREFACE.-p4.u3PREFACE.-p5.u3PREFACE.-p6.u3PREFACE.-p7.u4PREFACE.-p8.u4PREFACE.-p9.u4PREFACE.-p10.u4PREFACE.-p11.u4PREFACE.-p12.u5PREFACE.-"
+main: Message from eCore 0x009 ( 2, 1): "qu0-p1.u4the-p2.u5the-p3.u5the-p6.u8the-p7.u9the-p8.u9the-p9.u9the-p10.u10the-p12.u10the-p13.u10the-p14.u12the-p15.u14the-"
+main: Message from eCore 0x00a ( 2, 2): "qu0-p1.u11603.-p2.u21603.-p3.u31603.-p4.u41603.-p5.u41603.-p6.u41603.-p7.u41603.-p8.u41603.-p9.u51603.-"
+main: Message from eCore 0x00b ( 2, 3): "u7Tragicall-u7Tragicall-p16.u7Tragicall-p17.u7Tragicall-wrn0o5r0s50000 u7Tragicall-p19.u7Tragicall-wrn0o5r0s50000 u7Tragicall-wrn0o5r0s50000 u7Tragicall-p20.u8Tragicall-wrn0o5r0s50000 u8Tragicall-u8Tragicall-"
+main: Message from eCore 0x00c ( 3, 0): "qu0-p1.u2_Prince-p2.u2_Prince-p3.u3_Prince-p4.u3_Prince-p5.u3_Prince-p6.u3_Prince-p7.u5_Prince-p8.u6_Prince-p9.u6_Prince-p10.u6_Prince-p11.u7_Prince-p12.u8_Prince-"
+main: Message from eCore 0x00d ( 3, 1): "qu0-p1.u1uants-p3.u2uants-p4.u3uants-p6.u6uants-p7.u6uants-p8.u6uants-p9.u6uants-p10.u8uants-p11.u8uants-"
+main: Message from eCore 0x00e ( 3, 2): "qu0-p1.u3existence-p2.u4existence-p3.u4existence-p4.u4existence-p5.u4existence-p6.u4existence-"
+main: Message from eCore 0x00f ( 3, 3): "qu0-p1.u11.-p2.u21.-p3.u31.-p4.u31.-p5.u31.-p6.u51.-p7.u71.-"
+wc_finalize
+

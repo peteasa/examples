@@ -1,0 +1,4 @@
+# Allow users in the epiphany group to open the Epiphany devices
+# Want to restrict this to 0660 but remote python subprocess.Popen fails
+# so open up devices to world
+SUBSYSTEM=="epiphany", GROUP="epiphany", MODE="0666"
