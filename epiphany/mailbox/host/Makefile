@@ -1,8 +1,8 @@
 #################################################################
 #
 # Example make file to build host part of a project
-# Note the install rule will install the TARGET in 
-# $(OECORE_TARGET_SYSROOT)/usr/epiphany/bin
+# Note the install rule will install the TARGET in
+# /usr/epiphany/bin
 #
 # Dont use a conflicting name with an existing component!
 #
@@ -15,17 +15,17 @@ SRCS 		= mailbox.c
 TARGET_BASE	= mailbox
 
 # List of include search paths
-INCLUDES    	= 
+INCLUDES    	=
 
 # List of libraries
-LIB_PATHS   	= 
+LIB_PATHS   	=
 LIBS        	= \
 	-le-hal \
 	-le-loader \
 	-lpthread
 
 # base location for release
-prefix ?= $(OECORE_NATIVE_SYSROOT)/usr
+prefix ?= /usr
 
 # location of the final target
 TARGET_LOCATION = $(prefix)/epiphany/bin
@@ -49,9 +49,9 @@ bindir ?= $(exec_prefix)/bin
 # https://gcc.gnu.org/onlinedocs/cpp/Preprocessor-Output.html
 # CFLAGS = -E -dD
 
-INCLUDES	= -I$(OECORE_TARGET_SYSROOT)/usr/include
-EXTRACFLAGS  	= 
-CXXFLAGS 	+= 
+INCLUDES	= -I /usr/include
+EXTRACFLAGS  	=
+CXXFLAGS 	+=
 CFLAGS 		+= $(LIB_PATHS) $(LIBS) $(INCLUDES)
 LDFLAGS		+=
 
