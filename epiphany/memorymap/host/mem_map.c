@@ -32,6 +32,7 @@
 #include <unistd.h>
 
 #include <e-hal.h>
+#include <e-loader.h>  // for e_load_group
 
 // Not obvious what the magic is with this e_alloc
 // One approach would be to send the core the address allocated in emem.
@@ -93,7 +94,7 @@ int main(int argc, char *argv[])
 
 		// Load the device program onto the selected eCore
 		e_return_stat_t result;
-		result = e_load("/usr/epiphany/bin/e_mem_map.srec", &dev, row, col, E_FALSE);
+		result = e_load("/usr/epiphany-elf/sys-root/usr/epiphany/bin/e_mem_map.elf", &dev, row, col, E_FALSE);
 		if (result != E_OK)
 		{
 			fprintf(stderr, "main: 0x%03x Error in e_load %i\n", coreid, result);

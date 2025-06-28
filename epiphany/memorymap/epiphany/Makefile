@@ -15,31 +15,30 @@ SRCS		= e_mem_map.c
 TARGET_BASE	= e_mem_map
 
 # List of include search paths
-INCLUDES    	= 
+INCLUDES	= -I ${EPIPHANY_HOME}/include
 
 # List of libraries
-LIB_PATHS   	= 
+LIB_PATHS   	= -B ${EPIPHANY_HOME}/lib -B ${EPIPHANY_HOME}/lib/epiphany-elf/11.3.0
 LIBS        	= -le-lib
 
 # Build the names of the elf files
 ELFS		= $(SRCS:.c=.elf)
-SREC		= $(TARGET_BASE).srec
 
 # base location for release
-prefix ?= $(OECORE_NATIVE_SYSROOT)/usr
+prefix ?= $(EPIPHANY_HOME)/usr
 
 # location of the final target
-TARGET_NAME 	= $(TARGET_BASE).srec
+TARGET_NAME 	= $(TARGET_BASE).elf
 TARGET_LOCATION = $(prefix)/epiphany/bin
 TARGET 		= $(TARGET_LOCATION)/$(TARGET_NAME)
 
 # locations for compiler and linker rules
 exec_prefix ?= $(prefix)
-includedir ?= $(exec_prefix)/$(EXOTIC_TARGET_SYS)/include
-libdir ?= $(exec_prefix)/$(EXOTIC_TARGET_SYS)/lib
-bindir ?= $(exec_prefix)/bin/$(EXOTIC_TARGET_SYS)
+includedir ?= $(exec_prefix)/include
+libdir ?= $(exec_prefix)/lib
+bindir ?= $(exec_prefix)/bin
 
-CROSS_COMPILE=$(bindir)/$(EXOTIC_TARGET_PREFIX)
+CROSS_COMPILE=$(EXOTIC_TARGET_SYS)-
 CXX = $(CROSS_COMPILE)g++
 CC  = $(CROSS_COMPILE)gcc
 AR  = $(CROSS_COMPILE)ar
@@ -60,10 +59,10 @@ OBJCPY = $(CROSS_COMPILE)objcopy
 # CFLAGS = -E -dD
 
 ## Override the flags for an epiphany build
-EXTRACFLAGS  	= 
-CFLAGS          = $(LIB_PATHS) $(LIBS)
+EXTRACFLAGS  	=
+CFLAGS          = $(INCLUDES) $(LIB_PATHS) $(LIBS)
 CXXFLAGS    	= $(CFLAGS)
-LDFLAGS		= -T $(EPIPHANY_HOME)/bsps/current/fast.ldf
+LDFLAGS		= -T /usr/share/epiphany/bsps/current/fast.ldf
 
 .PHONY : clean uninstall
 
@@ -71,20 +70,14 @@ LDFLAGS		= -T $(EPIPHANY_HOME)/bsps/current/fast.ldf
 %.elf: %.c
 	$(CC) $(LDFLAGS) $< -o $@ ${CFLAGS}
 
-%.srec: %.elf
-	$(OBJCPY) --srec-forceS3 --output-target srec $< $@ 
-
 all : $(TARGET)
 
 $(ELFS) : $(SRCS)
-
-$(SREC) : $(ELFS)
 
 $(TARGET_NAME) : $(ELFS)
 
 clean :
 	rm -f $(ELFS)
-	rm -f $(SREC)
 
 $(TARGET) : $(TARGET_NAME)
 	install -d $(TARGET_LOCATION)
