@@ -1,6 +1,6 @@
-# parallella examples `elink-redesign`
+# parallella examples `y2024.2`
 
-Examples for COMBINED FPGA and LINUX environment START IN https://github.com/peteasa/parallella branch `elink-redesign`
+Examples for COMBINED FPGA and LINUX environment START IN https://github.com/peteasa/parallella-yoctobuild branch `y2024.2`
 
 ### Brief note about this repository
 
