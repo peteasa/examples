@@ -9,16 +9,16 @@
 #################################################################
 
 # names of all source files
-SRCS 		= mem_map.c
+SRCS 		= mesh_map.c
 
 # name of the final target- choose the name with care!
-TARGET_BASE	= mem_map
+TARGET_BASE	= mesh_map
 
 # List of include search paths
-INCLUDES    	= 
+INCLUDES    	=
 
 # List of libraries
-LIB_PATHS   	= 
+LIB_PATHS   	=
 LIBS        	= \
 	-le-hal \
 	-le-loader

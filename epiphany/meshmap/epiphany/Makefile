@@ -1,18 +1,18 @@
 #################################################################
 #
 # Example make file to build epiphany part of a project
-# Note the install rule will install the TARGET in 
-# $(OECORE_TARGET_SYSROOT)/usr/epiphany/bin
+# Note the install rule will install the TARGET in
+# $EPIPHANY_HOME/usr/epiphany/bin
 #
 # Dont use a conflicting name with an existing component!
 #
 #################################################################
 
 # SRC file names
-SRCS		= e_mem_map.c
+SRCS		= e_mesh_map.c
 
 # Base name of the final target- choose the name with care!
-TARGET_BASE	= e_mem_map
+TARGET_BASE	= e_mesh_map
 
 # List of include search paths
 INCLUDES	= -I ${EPIPHANY_HOME}/include
