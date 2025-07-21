@@ -29,7 +29,6 @@
 // a message identifying itself to the shared external
 // memory buffer.
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -50,32 +49,26 @@ int main(void) {
     e_coords_from_coreid(coreid, &myrow, &mycol);
 
     // Calculate the outbuf for this core
-    char * outbuf;
-    outbuf = shared_outbuf + (myrow * 4 + mycol) * 128;
+    uint32_t *outbuf;
+    outbuf = (uint32_t *) (shared_outbuf + (myrow * 4 + mycol) * 128);
 
-    // Remove sprintf and link against fastest libraries?
-
-    // The PRINTF family of functions do not fit
-    // in the internal memory, so we link against
-    // the FAST.LDF linker script, where these
-    // functions are placed in external memory.
-    sprintf(outbuf, "core 0x%03x ", coreid);
+    *outbuf++ = (uint32_t) coreid;
 
     e_coreid_t neighbourid;
 
-    // Print the coreid of the surrounding 4 cores
+    // Output the coreid of the surrounding 4 cores
     for (i=0; i<2; i++)
     {
         e_neighbor_id(E_PREV_CORE + i, E_ROW_WRAP, &row, &col);
         neighbourid = e_coreid_from_coords(row, col);
-        sprintf(outbuf + strlen(outbuf), "0x%03x ", neighbourid);
+        *outbuf++ = (uint32_t) neighbourid;
     }
 
     for (i=0; i<2; i++)
     {
         e_neighbor_id(E_PREV_CORE + i, E_COL_WRAP, &row, &col);
         neighbourid = e_coreid_from_coords(row, col);
-        sprintf(outbuf + strlen(outbuf), "0x%03x ", neighbourid);
+        *outbuf++ = (uint32_t) neighbourid;
     }
 
     void * dst;
@@ -88,6 +81,12 @@ int main(void) {
             e_write(&e_group_config, &coreid, i, j, dst, sizeof(e_coreid_t));
         }
     }
+
+    // write an end of buffer sequence
+    *outbuf++ = 0xAAAAAAAA;
+    *outbuf++ = 0x55555555;
+    *outbuf++ = 0xA5A5A5A5;
+    *outbuf++ = 0;
 
     return EXIT_SUCCESS;
 }

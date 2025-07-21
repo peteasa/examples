@@ -93,7 +93,6 @@ int mesh_map(char* elfFile)
     e_platform_t platform;
     e_epiphany_t dev;
     e_mem_t emem;
-    char emsg[_BufSize];
     struct timespec stime, etime;
     char cstime[_TimeSize], cetime[_TimeSize];
 
@@ -202,14 +201,16 @@ int mesh_map(char* elfFile)
 
         fprintf(stderr, "main: %3d: Message from eCore 0x%03x (%2d,%2d): ", i, coreid, row, col);
 
-        // read message from shared buffer.
-        if (timestamp) get_uptime(&stime);
-        e_read(&emem, 0, 0, _BufSize * (row * 4 + col), emsg, _BufSize);
-        if (timestamp) get_uptime(&etime);
+        for (int m = 0; m < 5; m++)
+        {
+            // read message from shared buffer.
+            uint32_t val;
+            e_read(&emem, 0, 0, (row * platform.cols + col) * _BufSize + m * 4, &val, sizeof(uint32_t));
+            if (0 < m) fprintf(stderr, "0x%x ", val);
+            else fprintf(stderr, "core: 0x%x neigbours: ", val);
+        }
 
-        // Print the message
-        fprintf(stderr, "\"%s\"\n", emsg);
-        if (timestamp) fprintf(stderr, "%s %s e_read() took: %f\n", get_time(cstime, &stime), get_time(cetime, &etime), get_duration(&stime, &etime));
+        fprintf(stderr, "\n");
 
         // read the neighbour ids from the core
         int p,q;

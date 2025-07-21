@@ -62,7 +62,7 @@ OBJCPY = $(CROSS_COMPILE)objcopy
 EXTRACFLAGS  	=
 CFLAGS          = $(INCLUDES) $(LIB_PATHS) $(LIBS)
 CXXFLAGS    	= $(CFLAGS)
-LDFLAGS		= -T /usr/share/epiphany/bsps/current/fast.ldf
+LDFLAGS		= -T /usr/share/epiphany/bsps/current/internal.ldf
 
 .PHONY : clean uninstall
 
