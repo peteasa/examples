@@ -31,16 +31,6 @@ volatile int interruptResult SECTION(".data_bank3");
 
 void user_isr();
 
-inline uint32_t multiply_ui(uint32_t a, uint32_t b);
-uint32_t multiply_ui(uint32_t a, uint32_t b)
-{
-    uint32_t s, l, result = 0;
-    s = b; l = a;
-    if (a < b) { s = a; l = b; }
-    for (uint32_t i=0; i<s; i++) result +=l;
-    return result;
-}
-
 int main(void) {
     interruptResult = 0x0;
     e_irq_attach(E_USER_INT, user_isr);
@@ -93,12 +83,12 @@ int main(void) {
 
     // compiler fails to process operator *
     // flags = (0x1 << (e_group_config.group_rows * e_group_config.group_cols)) - 1;
-    flags = (0x1 << multiply_ui(e_group_config.group_rows, e_group_config.group_cols)) - 1;
+    flags = (0x1 << (e_group_config.group_rows * e_group_config.group_cols)) - 1;
 
     // No need to visit this core
     // compiler fails to process operator *
     // flags = flags & ~(0x1 << (myrow * e_group_config.group_cols + mycol));
-    flags = flags & ~(0x1 << (multiply_ui(myrow, e_group_config.group_cols) + mycol));
+    flags = flags & ~(0x1 << (myrow * e_group_config.group_cols + mycol));
 
     while (flags != 0)
     {
