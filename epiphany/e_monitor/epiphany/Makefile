@@ -2,7 +2,7 @@
 #
 # Example make file to build epiphany part of a project
 # Note the install rule will install the TARGET in
-# $(EPIPHANY_HOME)/usr/epiphany/bin
+# /usr/epiphany/bin
 #
 # Dont use a conflicting name with an existing component!
 #
